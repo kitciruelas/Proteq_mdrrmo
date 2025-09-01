@@ -17,4 +17,4 @@ pool.on('error', (err) => {
     console.error('MySQL Pool Error:', err);
 });
 
-module.exports = pool;
+module.exports = pool; 

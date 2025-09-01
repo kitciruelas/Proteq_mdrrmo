@@ -2,9 +2,10 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/conn');
 const { sendIncidentAssignmentEmail, sendStaffAssignmentEmail } = require('../services/emailService');
+const { authenticateUser } = require('../middleware/authMiddleware');
 
 // Submit incident report
-router.post('/report', async (req, res) => {
+router.post('/report', authenticateUser, async (req, res) => {
   console.log('🚨 INCIDENT REPORT ROUTE HIT!');
   console.log('Request method:', req.method);
   console.log('Request URL:', req.url);
@@ -113,8 +114,8 @@ router.post('/report', async (req, res) => {
       });
     };
 
-    // Get user ID from request (assuming it's set by auth middleware)
-    const reportedBy = req.user?.id || 1; // Fallback to 1 for testing, should be properly handled in production
+    // Get user ID from authenticated request
+    const reportedBy = req.user.user_id;
 
     // Insert incident report into database
     const [result] = await pool.execute(

@@ -1,8 +1,8 @@
 const pool = require('../config/conn');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { sendPasswordResetOTP } = require('../utils/emailService');
-const { generateOTP, storeOTP, verifyOTP: verifyOTPFromStore } = require('../utils/otpStore');
+const { sendPasswordResetOTP } = require('../services/emailService');
+const { generateOTP, storeOTP, verifyOTP: verifyOTPFromStore, deleteOTP } = require('../utils/otpStore');
 
 // Helper function to get client IP address
 function getClientIP(req) {

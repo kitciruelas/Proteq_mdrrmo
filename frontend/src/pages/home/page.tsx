@@ -63,11 +63,12 @@ export default function Home() {
       try {
         const response = await publicApi.getHomeStats();
         if (response.success) {
+          const apiStats = response.stats as any; // Type assertion for API response
           setStats({
-            responders: response.stats.responders,
-            evacuationCenters: response.stats.evacuationCenters,
-            residentsCovered: response.stats.residentsCovered,
-            totalIncidents: response.stats.totalIncidents,
+            responders: apiStats.staff?.total || 0,
+            evacuationCenters: apiStats.evacuation_centers?.total || 0,
+            residentsCovered: apiStats.users?.total || 0, // Map users.total to residentsCovered
+            totalIncidents: apiStats.incidents?.total || 0,
           });
         } else {
           setStatsError('Failed to load stats');

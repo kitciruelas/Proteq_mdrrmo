@@ -342,6 +342,7 @@ export default function IncidentReportPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${userData?.token}`,
         },
         body: JSON.stringify(payload)
       });

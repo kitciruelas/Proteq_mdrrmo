@@ -6,7 +6,7 @@ const { authenticateUser } = require('../middleware/authMiddleware');
 // Get current user profile (authenticated user)
 router.get('/me', authenticateUser, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.user_id;
 
     const [users] = await pool.execute(
       `SELECT user_id, first_name as firstName, last_name as lastName, 
@@ -41,7 +41,7 @@ router.get('/me', authenticateUser, async (req, res) => {
 // Update user profile (authenticated user)
 router.put('/update', authenticateUser, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.user_id;
     const {
       firstName,
       lastName,

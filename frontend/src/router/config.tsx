@@ -1,0 +1,176 @@
+
+import type { RouteObject } from "react-router-dom";
+import NotFound from "../pages/NotFound";
+import Home from "../pages/home/page";
+import LoginPage from "../pages/auth/login/page";
+import SignupPage from "../pages/auth/signup/page";
+import ForgotPasswordPage from "../pages/auth/forgot-password/page";
+import VerifyOTPPage from "../pages/auth/verify-otp/page";
+import ResetPasswordPage from "../pages/auth/reset-password/page";
+import IncidentReportPage from "../pages/incident-report/page";
+import ProfilePage from "../pages/profile/page";
+import EvacuationCenterPage from "../pages/evacuation-center/page";
+import SafetyProtocolsPage from "../pages/safety-protocols/page";
+import HistoryReportPage from "../pages/history-report/page";
+
+// Admin Components
+import AdminLayout from "../components/AdminLayout";
+import AdminLogin from "../pages/admin/login/page";
+import AdminSignup from "../pages/admin/signup/page";
+import AdminDashboard from "../pages/admin/dashboard/page";
+import AlertsManagement from "../pages/admin/alerts/page";
+import UserManagement from "../pages/admin/users/page";
+import StaffManagement from "../pages/admin/staff/page";
+import ViewIncidents from "../pages/admin/incidents/view/page";   
+import Reports from "../pages/admin/reports/Reports";
+import EvacuationCentersManagement from "../pages/admin/evacuation/centers/page";
+import EvacuationRoutesManagement from "../pages/admin/evacuation/routes/page";
+import EvacuationResourcesManagement from "../pages/admin/evacuation/resources/page";
+import SafetyProtocolsManagement from "../pages/admin/safety-protocols/page";
+import ActivityLogs from "../pages/admin/activity-logs/page";
+import TeamsManagement from "../pages/admin/teams/page";
+import StaffDashboard from "../pages/staff/dashboard/page";
+import StaffIncidentsPage from "../pages/staff/incidents/page";
+import StaffLayout from "../components/StaffLayout";
+
+
+const routes: RouteObject[] = [
+  {
+    path: "/",
+    element: <Home />,
+  },
+  {
+    path: "/auth/login",
+    element: <LoginPage />,
+  },
+  {
+    path: "/auth/signup",
+    element: <SignupPage />,
+  },
+  {
+    path: "/auth/forgot-password",
+    element: <ForgotPasswordPage />,
+  },
+  {
+    path: "/auth/verify-otp",
+    element: <VerifyOTPPage />,
+  },
+  {
+    path: "/auth/reset-password",
+    element: <ResetPasswordPage />,
+  },
+  {
+    path: "/incident-report",
+    element: <IncidentReportPage />,
+  },
+  {
+    path: "/profile",
+    element: <ProfilePage />,
+  },
+  {
+    path: "/evacuation-center",
+    element: <EvacuationCenterPage />,
+  },
+  {
+    path: "/safety-protocols",
+    element: <SafetyProtocolsPage />,
+  },
+  {
+    path: "/history-report",
+    element: <HistoryReportPage />,
+  },
+  // Admin Auth Routes (separate from admin layout)
+  {
+    path: "/admin/login",
+    element: <AdminLogin />,
+  },
+  {
+    path: "/admin/signup",
+    element: <AdminSignup />,
+  },
+  // Admin Routes
+  {
+    path: "/admin",
+    element: <AdminLayout />,
+    children: [
+      {
+        path: "dashboard",
+        element: <AdminDashboard />,
+      },
+      {
+        path: "alerts",
+        element: <AlertsManagement />,
+      },
+      {
+        path: "users",
+        element: <UserManagement />,
+      },
+      {
+        path: "staff",
+        element: <StaffManagement />,
+      },
+      {
+        path: "teams",
+        element: <TeamsManagement />,
+      },
+      {
+        path: "incidents/view",
+        element: <ViewIncidents />,
+      },
+      {
+        path: "evacuation/centers",
+        element: <EvacuationCentersManagement />,
+      },
+      {
+        path: "evacuation/routes",
+        element: <EvacuationRoutesManagement />,
+      },
+      {
+        path: "evacuation/resources",
+        element: <EvacuationResourcesManagement />,
+      },
+      {
+        path: "safety-protocols",
+        element: <SafetyProtocolsManagement />,
+      },
+      {
+        path: "activity-logs",
+        element: <ActivityLogs />,
+      },
+      {
+        path: "reports",
+        element: <Reports />,
+      },
+      // Redirect /admin to /admin/dashboard
+      {
+        path: "",
+        element: <AdminDashboard />,
+      },
+    ],
+  },
+  // Staff Routes
+  {
+    path: "/staff",
+    element: <StaffLayout />,
+    children: [
+      {
+        path: "",
+        element: <StaffDashboard />,
+      },
+      {
+        path: "dashboard",
+        element: <StaffDashboard />,
+      },
+      {
+        path: "incidents",
+        element: <StaffIncidentsPage />,
+      },
+    ],
+  },
+  {
+    path: "*",
+    element: <NotFound />,
+  },
+];
+
+export default routes;

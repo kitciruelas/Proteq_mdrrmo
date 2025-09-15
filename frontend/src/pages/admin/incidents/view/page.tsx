@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { incidentsApi, teamsApi, staffManagementApi } from '../../../../utils/api';
+import { incidentsApi, teamsApi, staffManagementApi, activityLogsApi } from '../../../../utils/api';
+import ExportPreviewModal from '../../../../components/base/ExportPreviewModal';
+import { ExportUtils } from '../../../../utils/exportUtils';
+import type { ExportColumn } from '../../../../utils/exportUtils';
 
 interface Incident {
   id: number;
@@ -14,11 +17,13 @@ interface Incident {
   validationStatus: 'unvalidated' | 'validated' | 'rejected';
   validationNotes?: string;
   reportedBy: string;
+  reporterPhone?: string;
   assignedTo?: string;
   assignedTeamId?: number | null;
   assignedTeamName?: string;
   assignedStaffId?: number | null;
   assignedStaffName?: string;
+  attachment?: string; // Added attachment field for filenames
   dateReported: string;
   dateResolved?: string;
 }
@@ -41,14 +46,65 @@ interface Staff {
   team_name?: string;
 }
 
+// Export columns configuration for incidents - essential information only
+const incidentExportColumns: ExportColumn[] = [
+  {
+    key: 'dateReported',
+    label: 'Date Reported',
+    format: (value: string) => value ? ExportUtils.formatDateTime(value) : ''
+  },
+  { key: 'type', label: 'Type' },
+  {
+    key: 'priorityLevel',
+    label: 'Priority',
+    format: (value: string) => value?.charAt(0).toUpperCase() + value?.slice(1) || ''
+  },
+  {
+    key: 'status',
+    label: 'Status',
+    format: (value: string) => value?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) || ''
+  },
+  {
+    key: 'location',
+    label: 'Location',
+    format: (value: string, row: any) => {
+      if (value) return value;
+      // Extract location from description if not available
+      const match = row.description?.match(/Location:\s*([^\n]+)/i);
+      return match ? match[1].trim() : '';
+    }
+  },
+  {
+    key: 'description',
+    label: 'Description',
+    format: (value: string) => value?.length > 50 ? `${value.substring(0, 50)}...` : value || ''
+  },
+  {
+    key: 'reportedBy',
+    label: 'Reported By',
+    format: (value: string, row: any) => {
+      if (value) return value;
+      return row.reporterName || 'Unknown';
+    }
+  },
+  {
+    key: 'assignedTeamName',
+    label: 'Team',
+    format: (value: string) => value || 'Unassigned'
+  }
+];
+
 const ViewIncidents: React.FC = () => {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [showIncidentModal, setShowIncidentModal] = useState(false);
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
@@ -60,6 +116,8 @@ const ViewIncidents: React.FC = () => {
   const [showValidationModal, setShowValidationModal] = useState(false);
   const [validationNotes, setValidationNotes] = useState('');
   const [isValidating, setIsValidating] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showExportPreview, setShowExportPreview] = useState(false);
 
   // Helper function to check if assignment button should be disabled
   const isAssignmentButtonDisabled = () => {
@@ -80,21 +138,14 @@ const ViewIncidents: React.FC = () => {
 
   const fetchIncidents = async () => {
     try {
+      setLoading(true);
+      setError(null);
+
       const res = await incidentsApi.getIncidents();
-      console.log('🔍 Incidents API response:', res);
-      
+
       const records = (res?.incidents ?? []) as any[];
-      console.log('📋 Raw incident records:', records);
-      
+
       const mapped: Incident[] = records.map((row) => {
-        console.log('📝 Processing incident row:', {
-          incident_id: row.incident_id,
-          reported_by: row.reported_by,
-          reporter_name: row.reporter_name,
-          assigned_team_name: row.assigned_team_name,
-          assigned_staff_name: row.assigned_staff_name
-        });
-        
         // Backend fields from DB
         // incident_id, incident_type, description, longitude, latitude, date_reported,
         // status, assigned_to, reported_by, priority_level, reporter_safe_status
@@ -124,30 +175,29 @@ const ViewIncidents: React.FC = () => {
           status: status as Incident['status'],
           validationStatus: (row.validation_status || 'unvalidated') as Incident['validationStatus'],
           validationNotes: row.validation_notes || undefined,
-          reportedBy: String(row.reporter_name ?? row.reported_by ?? ''),
+          reportedBy: row.reporter_type === 'guest'
+            ? String(row.guest_name ?? 'Unknown Guest')
+            : String(row.reporter_name ?? row.reported_by ?? ''),
+          reporterPhone: row.reporter_type === 'guest'
+            ? (row.guest_contact ? String(row.guest_contact) : undefined)
+            : (row.reporter_phone ? String(row.reporter_phone) : undefined),
           assignedTo: row.assigned_to ? String(row.assigned_to) : undefined,
           assignedTeamId: row.assigned_team_id ? Number(row.assigned_team_id) : undefined,
           assignedTeamName: row.assigned_team_name || undefined,
           assignedStaffId: row.assigned_staff_id ? Number(row.assigned_staff_id) : undefined,
           assignedStaffName: row.assigned_staff_name || undefined,
+          attachment: row.attachment || undefined, // Added attachment field
           dateReported,
           dateResolved: undefined,
         };
-        
-        console.log('✅ Mapped incident:', {
-          id: incident.id,
-          reportedBy: incident.reportedBy,
-          assignedTeamName: incident.assignedTeamName,
-          assignedStaffName: incident.assignedStaffName
-        });
-        
+
         return incident;
       });
-      
-      console.log('🎯 Final mapped incidents:', mapped);
+
       setIncidents(mapped);
     } catch (error) {
       console.error('Error fetching incidents:', error);
+      setError('Failed to load incidents. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -167,7 +217,6 @@ const ViewIncidents: React.FC = () => {
   const fetchStaff = async () => {
     try {
       const res = await staffManagementApi.getStaff();
-      console.log('Staff API response:', res);
       // Handle different possible response structures
       if (res && typeof res === 'object') {
         if ('staff' in res && Array.isArray(res.staff)) {
@@ -192,17 +241,24 @@ const ViewIncidents: React.FC = () => {
   const handleStatusChange = async (incidentId: number, newStatus: Incident['status']) => {
     try {
       // API call to update incident status
-      setIncidents(prev => prev.map(incident => 
-        incident.id === incidentId 
-          ? { 
-              ...incident, 
+      await incidentsApi.updateIncidentStatus(incidentId, {
+        status: newStatus,
+        notes: `Status changed to ${newStatus}`
+      });
+
+      // Update local state after successful API call
+      setIncidents(prev => prev.map(incident =>
+        incident.id === incidentId
+          ? {
+              ...incident,
               status: newStatus,
               dateResolved: newStatus === 'resolved' ? new Date().toISOString() : incident.dateResolved
-            } 
+            }
           : incident
       ));
     } catch (error) {
       console.error('Error updating incident status:', error);
+      // Could add a toast notification here for user feedback
     }
   };
 
@@ -210,13 +266,9 @@ const ViewIncidents: React.FC = () => {
     try {
       setIsAssigning(true);
       setEmailStatus(null);
-      
-      console.log('🔄 Assigning team to incident:', { incidentId, teamId });
-      
+
       const response = await incidentsApi.assignTeamToIncident(incidentId, teamId);
-      
-      console.log('✅ Team assignment response:', response);
-      
+
       // Update local state
       setIncidents(prev => prev.map(incident => {
         if (incident.id === incidentId) {
@@ -231,35 +283,33 @@ const ViewIncidents: React.FC = () => {
         }
         return incident;
       }));
-      
+
       // Show email status
       if (response?.emailSent) {
         setEmailStatus({
           sent: true,
           details: response.emailDetails
         });
-        console.log('📧 Email notifications sent successfully:', response.emailDetails);
       } else {
         setEmailStatus({
           sent: false,
           details: response.emailDetails || { error: 'No email details provided' }
         });
-        console.log('⚠️ Email notifications failed:', response.emailDetails);
       }
-      
+
       setTimeout(() => {
         setShowAssignmentModal(false);
         setEmailStatus(null);
       }, 3000);
-      
+
     } catch (error) {
-      console.error('❌ Error assigning team to incident:', error);
-      
+      console.error('Error assigning team to incident:', error);
+
       // Check if it's a backend validation error
       if (error instanceof Error && error.message.includes('Cannot assign team with no active members')) {
         setEmailStatus({
           sent: false,
-          details: { 
+          details: {
             error: 'Cannot assign team with no active members. Please add members to the team first.',
             teamName: 'Selected Team'
           }
@@ -288,44 +338,20 @@ const ViewIncidents: React.FC = () => {
       // If updating and no new notes provided, keep existing notes
       const finalNotes = notes || currentIncident.validationNotes;
       
-      // Check if backend is accessible first
-      try {
-        const healthCheck = await fetch('http://localhost:5000/api/health');
-        if (!healthCheck.ok) {
-          throw new Error('Backend server not accessible');
-        }
-        console.log('✅ Backend health check passed');
-      } catch (healthError) {
-        console.error('❌ Backend health check failed:', healthError);
-        console.log('🔄 Proceeding with local validation only');
-      }
-      
       // Call API to update validation
-      console.log('🔄 Calling validation API with payload:', {
-        incidentId,
-        validationStatus,
-        validationNotes: finalNotes,
-        assignedTo: null
-      });
-      
       try {
         const response = await incidentsApi.validateIncident(incidentId, {
           validationStatus,
           validationNotes: finalNotes,
           assignedTo: null // Backend expects this field
         });
-        
-        console.log('✅ Validation API response:', response);
-        
+
         if (!response.success) {
           throw new Error(response.message || 'Failed to update validation');
         }
       } catch (apiError) {
-        console.error('❌ API call failed, using local validation as fallback:', apiError);
-        
+        console.error('API call failed, using local validation as fallback:', apiError);
         // Fallback: Update local state only (for testing purposes)
-        console.log('🔄 Using local validation fallback');
-        
         // In production, you would want to show an error message here
         // For now, we'll continue with local state update
       }
@@ -374,19 +400,11 @@ const ViewIncidents: React.FC = () => {
       }, 3000);
       
     } catch (error) {
-      console.error('❌ Error validating incident:', error);
-      
-      if (error instanceof Error) {
-        console.error('❌ Error details:', {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        });
-      }
-      
+      console.error('Error validating incident:', error);
+
       setEmailStatus({
         sent: false,
-        details: { 
+        details: {
           error: error instanceof Error ? error.message : 'Unknown error',
           details: 'Check console for more information'
         }
@@ -400,13 +418,9 @@ const ViewIncidents: React.FC = () => {
     try {
       setIsAssigning(true);
       setEmailStatus(null);
-      
-      console.log('🔄 Assigning staff to incident:', { incidentId, staffId });
-      
+
       const response = await incidentsApi.assignStaffToIncident(incidentId, staffId);
-      
-      console.log('✅ Staff assignment response:', response);
-      
+
       // Update local state
       setIncidents(prev => prev.map(incident => {
         if (incident.id === incidentId) {
@@ -421,29 +435,27 @@ const ViewIncidents: React.FC = () => {
         }
         return incident;
       }));
-      
+
       // Show email status
       if (response?.emailSent) {
         setEmailStatus({
           sent: true,
           details: response.emailDetails
         });
-        console.log('📧 Email notification sent successfully:', response.emailDetails);
       } else {
         setEmailStatus({
           sent: false,
           details: response.emailDetails || { error: 'No email details provided' }
         });
-        console.log('⚠️ Email notification failed:', response.emailDetails);
       }
-      
+
       setTimeout(() => {
         setShowAssignmentModal(false);
         setEmailStatus(null);
       }, 3000);
-      
+
     } catch (error) {
-      console.error('❌ Error assigning staff to incident:', error);
+      console.error('Error assigning staff to incident:', error);
       setEmailStatus({
         sent: false,
         details: { error: error instanceof Error ? error.message : 'Unknown error' }
@@ -472,7 +484,25 @@ const ViewIncidents: React.FC = () => {
                          incident.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || incident.status === statusFilter;
     const matchesPriority = priorityFilter === 'all' || incident.priorityLevel === priorityFilter;
-    return matchesSearch && matchesStatus && matchesPriority;
+
+    // Date range filtering
+    const matchesDateRange = (() => {
+      if (!startDate && !endDate) return true;
+      const incidentDate = new Date(incident.dateReported);
+      const start = startDate ? new Date(startDate) : null;
+      const end = endDate ? new Date(endDate) : null;
+
+      if (start && end) {
+        return incidentDate >= start && incidentDate <= end;
+      } else if (start) {
+        return incidentDate >= start;
+      } else if (end) {
+        return incidentDate <= end;
+      }
+      return true;
+    })();
+
+    return matchesSearch && matchesStatus && matchesPriority && matchesDateRange;
   });
 
   const getPriorityColor = (priority: Incident['priorityLevel']) => {
@@ -505,6 +535,42 @@ const ViewIncidents: React.FC = () => {
     }
   };
 
+  // Handle export with preview
+  const handleExport = async () => {
+    if (filteredIncidents.length === 0) return;
+
+    setIsExporting(true);
+    try {
+      // Build dynamic title based on filters
+      let title = 'Incidents Report';
+      const filterParts = [];
+      if (searchTerm && searchTerm.trim()) filterParts.push(`Search: "${searchTerm.trim()}"`);
+      if (statusFilter && statusFilter !== 'all') filterParts.push(`Status: ${statusFilter.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}`);
+      if (priorityFilter && priorityFilter !== 'all') filterParts.push(`Priority: ${priorityFilter.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}`);
+      if (startDate || endDate) {
+        let dateLabel = '';
+        if (startDate && endDate) dateLabel = `${startDate} to ${endDate}`;
+        else if (startDate) dateLabel = `From ${startDate}`;
+        else if (endDate) dateLabel = `Until ${endDate}`;
+        filterParts.push(`Date: ${dateLabel}`);
+      }
+      if (filterParts.length > 0) {
+        title += ' (' + filterParts.join(', ') + ')';
+      }
+      const options = {
+        filename: 'incidents_report',
+        title,
+        includeTimestamp: true
+      };
+
+      await ExportUtils.exportToPDF(filteredIncidents, incidentExportColumns, options);
+    } catch (error) {
+      console.error('Export failed:', error);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -522,9 +588,27 @@ const ViewIncidents: React.FC = () => {
           <p className="text-gray-600 mt-1">Monitor and manage reported incidents</p>
         </div>
         <div className="flex items-center space-x-3">
-          <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-            <i className="ri-download-line mr-2"></i>
-            Export Report
+          <button
+            onClick={() => setShowExportPreview(true)}
+            disabled={filteredIncidents.length === 0 || isExporting}
+            className={`px-4 py-2 rounded-lg transition-colors flex items-center ${
+              filteredIncidents.length === 0 || isExporting
+                ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                : 'bg-green-600 text-white hover:bg-green-700'
+            }`}
+            title={filteredIncidents.length === 0 ? 'No data to export' : 'Export incidents report'}
+          >
+            {isExporting ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Exporting...
+              </>
+            ) : (
+              <>
+                <i className="ri-download-line mr-2"></i>
+                Export Report ({filteredIncidents.length})
+              </>
+            )}
           </button>
         </div>
       </div>
@@ -632,6 +716,37 @@ const ViewIncidents: React.FC = () => {
               <option value="high">High</option>
               <option value="critical">Critical</option>
             </select>
+          </div>
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">From:</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <label className="text-sm font-medium text-gray-700">To:</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            {(startDate || endDate) && (
+              <button
+                onClick={() => {
+                  setStartDate('');
+                  setEndDate('');
+                }}
+                className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Clear Dates
+              </button>
+            )}
           </div>
           <div className="text-sm text-gray-600">
             Showing {filteredIncidents.length} of {incidents.length} incidents
@@ -822,6 +937,12 @@ const ViewIncidents: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Reported By</label>
                   <p className="text-sm text-gray-900">{selectedIncident.reportedBy}</p>
+                  {selectedIncident.reporterPhone && (
+                    <p className="text-sm text-gray-600 mt-1">
+                      <i className="ri-phone-line mr-1"></i>
+                      {selectedIncident.reporterPhone}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Assigned Team</label>
@@ -987,6 +1108,30 @@ const ViewIncidents: React.FC = () => {
                   
                 </div>
               </div>
+              {/* Attachments Section */}
+              {selectedIncident.attachment && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Attachments</label>
+                  <div className="space-y-2">
+                    {selectedIncident.attachment.split(',').map((filename, index) => (
+                      <div key={index} className="flex items-center p-2 bg-gray-50 rounded-lg border border-gray-200">
+                        <i className="ri-file-line text-gray-500 mr-2"></i>
+                        <span className="text-sm text-gray-700 flex-1">{filename}</span>
+                        <a
+                          href={`/uploads/incidents/${filename}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1 bg-blue-100 text-blue-700 text-xs rounded hover:bg-blue-200 transition-colors"
+                        >
+                          <i className="ri-eye-line mr-1"></i>
+                          View
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Date Reported</label>
@@ -1406,7 +1551,18 @@ const ViewIncidents: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Export Preview Modal */}
+      <ExportPreviewModal
+        open={showExportPreview}
+        onClose={() => setShowExportPreview(false)}
+        onExport={handleExport}
+        staff={filteredIncidents}
+        columns={incidentExportColumns.map(col => ({ key: col.key, label: col.label }))}
+      />
+
     </div>
+
   );
 };
 

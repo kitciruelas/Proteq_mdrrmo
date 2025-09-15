@@ -143,10 +143,17 @@ router.post('/', async (req, res) => {
     const settingId = result.insertId;
     
     // Log the creation
+    const { created_by } = req.body;
+    const finalCreatedBy = created_by !== null && created_by !== undefined
+      ? created_by
+      : (req.admin?.admin_id || null);
+
+    console.log('Final created_by value to be inserted:', finalCreatedBy);
+
     await pool.execute(`
       INSERT INTO activity_logs (admin_id, action, details, created_at)
       VALUES (?, 'system_setting_create', ?, NOW())
-    `, [req.user?.id || 1, `Created new system setting: ${setting_key}`]);
+    `, [finalCreatedBy, `Created new system setting: ${setting_key}`]);
     
     res.status(201).json({
       success: true,
@@ -206,10 +213,17 @@ router.put('/:key', async (req, res) => {
     `, [processedValue, setting_type, description, category, is_public, req.user?.id || 1, key]);
     
     // Log the update
+    const { created_by } = req.body;
+    const finalCreatedBy = created_by !== null && created_by !== undefined
+      ? created_by
+      : (req.admin?.admin_id || null);
+
+    console.log('Final created_by value to be inserted:', finalCreatedBy);
+
     await pool.execute(`
       INSERT INTO activity_logs (admin_id, action, details, created_at)
       VALUES (?, 'system_setting_update', ?, NOW())
-    `, [req.user?.id || 1, `Updated system setting: ${key}`]);
+    `, [finalCreatedBy, `Updated system setting: ${key}`]);
     
     res.json({
       success: true,
@@ -249,10 +263,17 @@ router.delete('/:key', async (req, res) => {
     await pool.execute('DELETE FROM system_settings WHERE setting_key = ?', [key]);
     
     // Log the deletion
+    const { created_by } = req.body;
+    const finalCreatedBy = created_by !== null && created_by !== undefined
+      ? created_by
+      : (req.admin?.admin_id || null);
+
+    console.log('Final created_by value to be inserted:', finalCreatedBy);
+
     await pool.execute(`
       INSERT INTO activity_logs (admin_id, action, details, created_at)
       VALUES (?, 'system_setting_delete', ?, NOW())
-    `, [req.user?.id || 1, `Deleted system setting: ${key}`]);
+    `, [finalCreatedBy, `Deleted system setting: ${key}`]);
     
     res.json({
       success: true,

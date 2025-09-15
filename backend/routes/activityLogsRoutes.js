@@ -14,13 +14,10 @@ router.get('/', async (req, res) => {
       date_to = ''
     } = req.query;
     
-    console.log('📊 Fetching activity logs with filters:', { page, limit, user_type, action, date_from, date_to });
-    
     // First, check if the activity_logs table exists
     try {
       const [tableCheck] = await pool.execute("SHOW TABLES LIKE 'activity_logs'");
       if (tableCheck.length === 0) {
-        console.error('❌ activity_logs table does not exist');
         return res.status(500).json({
           success: false,
           message: 'Activity logs table not found. Please run the setup script first.',
@@ -28,7 +25,6 @@ router.get('/', async (req, res) => {
         });
       }
     } catch (tableError) {
-      console.error('❌ Error checking table existence:', tableError);
       return res.status(500).json({
         success: false,
         message: 'Database connection error',

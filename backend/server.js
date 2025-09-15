@@ -4,6 +4,11 @@ const bodyParser = require('body-parser');
 const path = require('path');
 require('dotenv').config();
 
+// Set NODE_ENV to development if not set (for debugging)
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'development';
+}
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -19,6 +24,9 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Serve incident attachments specifically
+app.use('/uploads/incidents', express.static(path.join(__dirname, 'uploads', 'incidents')));
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');

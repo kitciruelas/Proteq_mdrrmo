@@ -67,13 +67,15 @@ export default function LoginPage() {
       // Check if general user login successful
       if (data && data.success) {
         console.log('General user login successful:', data);
+        const role = 'user';
+        const userTypeValue = 'user';
         userData = {
           ...data.user,
-          role: 'user',
-          userType: 'user',
+          role,
+          userType: userTypeValue,
           token: data.token // Add the token to user data
         };
-        userType = 'user';
+        userType = userTypeValue;
       } else {
         console.log('General user login failed, trying staff login...');
 
@@ -96,7 +98,29 @@ export default function LoginPage() {
           };
           userType = 'staff';
         } else {
-          console.log('Staff login also failed:', data);
+          console.log('Staff login also failed, trying admin login...');
+
+          // Try admin login as last resort
+          data = await apiRequest('/auth/login/admin', {
+            method: 'POST',
+            body: JSON.stringify({
+              email: formData.email,
+              password: formData.password
+            })
+          });
+
+          if (data && data.success) {
+            console.log('Admin login successful:', data);
+            userData = {
+              ...data.admin,
+              role: 'admin',
+              userType: 'admin',
+              token: data.token // May be undefined
+            };
+            userType = 'admin';
+          } else {
+            console.log('Admin login also failed:', data);
+          }
         }
       }
 
@@ -134,11 +158,7 @@ export default function LoginPage() {
       }
 
       // Handle specific error cases
-      if (data && data.message) {
-        setErrorMessage(data.message);
-      } else {
-        setErrorMessage('Login failed. Please check your credentials and try again.');
-      }
+      setErrorMessage('Email or password is incorrect. Please try again.');
       setShowErrorMessage(true);
 
     } catch (error) {

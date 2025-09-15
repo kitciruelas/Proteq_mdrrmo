@@ -123,6 +123,29 @@ router.post('/login', async (req, res) => {
       console.log('Could not update last login:', updateError.message);
     }
     
+    // Log admin login activity
+    try {
+      const { created_by } = req.body;
+      const finalCreatedBy = created_by !== null && created_by !== undefined
+        ? created_by
+        : (req.admin?.admin_id || admin.admin_id);
+
+      const clientIP = req.headers['x-forwarded-for'] ||
+                      req.headers['x-real-ip'] ||
+                      req.connection.remoteAddress ||
+                      req.socket.remoteAddress ||
+                      req.ip ||
+                      'unknown';
+      await pool.execute(`
+        INSERT INTO activity_logs (admin_id, action, details, ip_address, created_at)
+        VALUES (?, 'admin_login', ?, ?, NOW())
+      `, [finalCreatedBy, `Admin ${admin.email} logged in successfully`, clientIP]);
+      console.log('✅ Activity logged: admin_login for admin ID:', finalCreatedBy);
+    } catch (logError) {
+      console.error('❌ Failed to log admin login activity:', logError.message);
+      // Don't fail the main operation if logging fails
+    }
+    
     res.json({
       success: true,
       message: 'Login successful',
@@ -149,6 +172,54 @@ router.post('/login', async (req, res) => {
 // POST - Admin logout (optional - mainly for logging)
 router.post('/logout', async (req, res) => {
   try {
+    // Get admin info from token for logging
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    let adminId = null;
+    let adminEmail = 'unknown';
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        if (decoded.type === 'admin') {
+          adminId = decoded.id;
+          adminEmail = decoded.email;
+        }
+      } catch (tokenError) {
+        console.log('Could not decode token for logout logging:', tokenError.message);
+      }
+    }
+
+    // Log admin logout activity
+    try {
+      const { created_by } = req.body;
+      const finalCreatedBy = created_by !== null && created_by !== undefined
+        ? created_by
+        : (req.admin?.admin_id || adminId);
+
+      const clientIP = req.headers['x-forwarded-for'] ||
+                      req.headers['x-real-ip'] ||
+                      req.connection.remoteAddress ||
+                      req.socket.remoteAddress ||
+                      req.ip ||
+                      'unknown';
+
+      // Only log if we have a valid admin ID
+      if (finalCreatedBy) {
+        await pool.execute(`
+          INSERT INTO activity_logs (admin_id, action, details, ip_address, created_at)
+          VALUES (?, 'admin_logout', ?, ?, NOW())
+        `, [finalCreatedBy, `Admin ${adminEmail} logged out successfully`, clientIP]);
+        console.log('✅ Activity logged: admin_logout for admin ID:', finalCreatedBy);
+      } else {
+        console.log('⚠️ Could not log admin logout: admin ID not found');
+      }
+    } catch (logError) {
+      console.error('❌ Failed to log admin logout activity:', logError.message);
+      // Don't fail the main operation if logging fails
+    }
+
     // In a real app, you might want to blacklist the token
     res.json({
       success: true,
@@ -168,29 +239,100 @@ router.post('/logout', async (req, res) => {
 router.get('/profile', authenticateAdmin, async (req, res) => {
   try {
     const adminId = req.admin.id;
-    
+
     const [admins] = await pool.execute(
       'SELECT admin_id, name, email, role, status, created_at FROM admin WHERE admin_id = ?',
       [adminId]
     );
-    
+
     if (admins.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Admin not found'
       });
     }
-    
+
     res.json({
       success: true,
       admin: admins[0]
     });
-    
+
   } catch (error) {
     console.error('Error fetching admin profile:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch profile',
+      error: error.message
+    });
+  }
+});
+
+// PUT - Update current admin profile
+router.put('/profile', authenticateAdmin, async (req, res) => {
+  try {
+    const adminId = req.admin.id;
+    const { name, email } = req.body;
+
+    if (!name || !email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name and email are required'
+      });
+    }
+
+    // Check if email is already taken by another admin
+    const [existingAdmins] = await pool.execute(
+      'SELECT admin_id FROM admin WHERE email = ? AND admin_id != ?',
+      [email, adminId]
+    );
+
+    if (existingAdmins.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is already taken by another admin'
+      });
+    }
+
+    // Update admin profile
+    await pool.execute(
+      'UPDATE admin SET name = ?, email = ?, updated_at = NOW() WHERE admin_id = ?',
+      [name, email, adminId]
+    );
+
+    // Get updated admin data
+    const [updatedAdmins] = await pool.execute(
+      'SELECT admin_id, name, email, role, status, created_at FROM admin WHERE admin_id = ?',
+      [adminId]
+    );
+
+    // Log the profile update
+    try {
+      const clientIP = req.headers['x-forwarded-for'] ||
+                      req.headers['x-real-ip'] ||
+                      req.connection.remoteAddress ||
+                      req.socket.remoteAddress ||
+                      req.ip ||
+                      'unknown';
+
+      await pool.execute(`
+        INSERT INTO activity_logs (admin_id, action, details, ip_address, created_at)
+        VALUES (?, 'admin_profile_update', ?, ?, NOW())
+      `, [adminId, `Admin updated profile: name=${name}, email=${email}`, clientIP]);
+    } catch (logError) {
+      console.warn('Failed to log admin profile update activity:', logError.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      admin: updatedAdmins[0]
+    });
+
+  } catch (error) {
+    console.error('Error updating admin profile:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update profile',
       error: error.message
     });
   }
@@ -282,10 +424,15 @@ router.post('/change-password', authenticateAdmin, async (req, res) => {
     
     // Log the password change
     try {
+      const { created_by } = req.body;
+      const finalCreatedBy = created_by !== null && created_by !== undefined
+        ? created_by
+        : (req.admin?.admin_id || adminId);
+
       await pool.execute(`
         INSERT INTO activity_logs (admin_id, action, details, created_at)
         VALUES (?, 'admin_password_change', ?, NOW())
-      `, [adminId, 'Admin changed password successfully']);
+      `, [finalCreatedBy, 'Admin changed password successfully']);
     } catch (logError) {
       console.warn('Failed to log admin password change activity:', logError.message);
     }

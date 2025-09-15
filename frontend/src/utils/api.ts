@@ -177,15 +177,22 @@ export const apiRequest = async <T = any>(
     ...options,
   };
   
-  console.log(`API Request: ${config.method || 'GET'} ${url}`);
+  // Suppress API request log for login endpoints to avoid cluttering console
+  if (!endpoint.includes('/auth/login/')) {
+    console.log(`API Request: ${config.method || 'GET'} ${url}`);
+  }
   
   try {
     const response = await fetch(url, config);
     
     // Handle 401 Unauthorized and 403 Forbidden responses (token issues)
     // Don't treat 403 as auth error for routing endpoints since they may return 403 from external APIs
+    // Don't clear auth data for login endpoints since user is trying to log in
     if (response.status === 401 || (response.status === 403 && !endpoint.includes('/routing/'))) {
-      console.warn(`Authentication error (${response.status}) for ${endpoint}`);
+      // Only log warning if NOT a login endpoint
+      if (!endpoint.includes('/auth/login/')) {
+        console.warn(`Authentication error (${response.status}) for ${endpoint}`);
+      }
 
       let errorData;
       try {
@@ -194,17 +201,30 @@ export const apiRequest = async <T = any>(
         errorData = { message: 'Authentication failed' };
       }
 
-      // Clear auth data on authentication errors
-      clearAuthDataOnError();
-
-      // Throw specific error for authentication issues
-      throw new Error(errorData.message || 'Authentication failed. Please log in again.');
+      // Only clear auth data if NOT a login endpoint
+      if (!endpoint.includes('/auth/login/')) {
+        clearAuthDataOnError();
+        // Throw specific error for authentication issues
+        throw new Error(errorData.message || 'Authentication failed. Please log in again.');
+      }
     }
     
     if (!response.ok) {
+      // Special handling for login endpoints - return error data instead of throwing
+      if (endpoint.includes('/auth/login/') && response.status === 401) {
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch {
+          errorData = { success: false, message: 'Authentication failed' };
+        }
+        // Suppress console log for login failures to avoid cluttering console
+        return errorData;
+      }
+
       let errorMessage = `HTTP error! status: ${response.status}`;
       let errorData;
-      
+
       try {
         errorData = await response.json();
         if (errorData.message) {
@@ -216,7 +236,7 @@ export const apiRequest = async <T = any>(
         // If JSON parsing fails, use the status text
         errorMessage = response.statusText || errorMessage;
       }
-      
+
       // Log detailed error information
       console.error(`API Error for ${endpoint}:`, {
         status: response.status,
@@ -224,16 +244,22 @@ export const apiRequest = async <T = any>(
         errorData,
         url
       });
-      
+
       throw new Error(errorMessage);
     }
     
     const responseData = await response.json();
-    console.log(`API Success for ${endpoint}:`, responseData.success !== undefined ? responseData.success : 'No success field');
+    // Suppress API success log for login endpoints to avoid cluttering console
+    if (!endpoint.includes('/auth/login/')) {
+      console.log(`API Success for ${endpoint}:`, responseData.success !== undefined ? responseData.success : 'No success field');
+    }
     return responseData;
   } catch (error) {
-    console.error(`API request failed for ${endpoint}:`, error);
-    
+    // Suppress API error log for login endpoints to avoid cluttering console
+    if (!endpoint.includes('/auth/login/')) {
+      console.error(`API request failed for ${endpoint}:`, error);
+    }
+
     // Re-throw the error with additional context
     if (error instanceof Error) {
       if (error.message.includes('Authentication') || error.message.includes('token')) {
@@ -241,7 +267,7 @@ export const apiRequest = async <T = any>(
       }
       throw error;
     }
-    
+
     throw new Error(`Unknown error occurred: ${String(error)}`);
   }
 };
@@ -282,21 +308,70 @@ export const adminAuthApi = {
       body: JSON.stringify({ email, password }),
     });
   },
-  
+
   logout: async () => {
     return apiRequest('/admin/auth/logout', {
       method: 'POST',
     });
   },
-  
+
   getProfile: async () => {
     return apiRequest('/admin/auth/profile');
   },
-  
+
+  updateProfile: async (profileData: { name: string; email: string }) => {
+    return apiRequest('/admin/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(profileData),
+    });
+  },
+
   changePassword: async (currentPassword: string, newPassword: string) => {
     return apiRequest('/admin/auth/change-password', {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  },
+};
+
+// User Authentication API
+export const userAuthApi = {
+  login: async (email: string, password: string) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+      token: string;
+      user: any;
+    }>('/auth/login/user', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  },
+
+  logout: async () => {
+    return apiRequest('/auth/logout/user', {
+      method: 'POST',
+    });
+  },
+};
+
+// Staff Authentication API
+export const staffAuthApi = {
+  login: async (email: string, password: string) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+      token: string;
+      staff: any;
+    }>('/auth/login/staff', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  },
+
+  logout: async () => {
+    return apiRequest('/auth/logout/staff', {
+      method: 'POST',
     });
   },
 };
@@ -397,10 +472,12 @@ export const userManagementApi = {
     });
   },
   
-  updateUserStatus: async (id: number, status: string) => {
+  updateUserStatus: async (id: number, status: number, created_by?: number) => {
+    const body: any = { status };
+    if (created_by !== undefined) body.created_by = created_by;
     return apiRequest(`/users/${id}/status`, {
       method: 'PUT',
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(body),
     });
   },
   
@@ -448,7 +525,7 @@ export const staffManagementApi = {
     });
   },
   
-  updateStaffStatus: async (id: number, status: string) => {
+  updateStaffStatus: async (id: number, status: number) => {
     return apiRequest(`/staff/${id}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status }),
@@ -955,6 +1032,8 @@ export const routingApi = {
 
 export default {
   adminAuthApi,
+  userAuthApi,
+  staffAuthApi,
   adminDashboardApi,
   userManagementApi,
   staffManagementApi,

@@ -4,6 +4,7 @@ const pool = require('../config/conn');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const { authenticateAdmin } = require('../middleware/authMiddleware');
 
 // Configure multer storage
 const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -23,7 +24,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Get all evacuation centers
+// Get all evacuation centers (public access for viewing)
 router.get('/', async (req, res) => {
   try {
     console.log('Fetching evacuation centers...');
@@ -41,7 +42,7 @@ router.get('/', async (req, res) => {
 });
 
 // Create a new evacuation center
-router.post('/', async (req, res) => {
+router.post('/', authenticateAdmin, async (req, res) => {
   try {
     const {
       name,
@@ -71,7 +72,7 @@ router.post('/', async (req, res) => {
 });
 
 // Update an evacuation center
-router.put('/:centerId', async (req, res) => {
+router.put('/:centerId', authenticateAdmin, async (req, res) => {
   const { centerId } = req.params;
   try {
     const { name, latitude, longitude, capacity, current_occupancy, status, contact_person, contact_number } = req.body || {};
@@ -94,10 +95,17 @@ router.put('/:centerId', async (req, res) => {
     
     // Log the center update
     try {
+      const { created_by } = req.body;
+      const finalCreatedBy = created_by !== null && created_by !== undefined
+        ? created_by
+        : (req.admin?.admin_id || null);
+
+      console.log('Final created_by value to be inserted:', finalCreatedBy);
+
       await pool.execute(`
         INSERT INTO activity_logs (admin_id, action, details, created_at)
         VALUES (?, 'evacuation_center_update', ?, NOW())
-      `, [req.user?.id || 1, `Updated evacuation center (ID: ${centerId})`]);
+      `, [finalCreatedBy, `Updated evacuation center (ID: ${centerId})`]);
     } catch (logError) {
       console.warn('Failed to log evacuation center update activity:', logError.message);
     }
@@ -114,7 +122,7 @@ router.put('/:centerId', async (req, res) => {
 });
 
 // Delete an evacuation center (cascades to resources)
-router.delete('/:centerId', async (req, res) => {
+router.delete('/:centerId', authenticateAdmin, async (req, res) => {
   const { centerId } = req.params;
   try {
     const [result] = await pool.execute('DELETE FROM evacuation_centers WHERE center_id = ?', [centerId]);
@@ -124,10 +132,17 @@ router.delete('/:centerId', async (req, res) => {
     
     // Log the center deletion
     try {
+      const { created_by } = req.body;
+      const finalCreatedBy = created_by !== null && created_by !== undefined
+        ? created_by
+        : (req.admin?.admin_id || null);
+
+      console.log('Final created_by value to be inserted:', finalCreatedBy);
+
       await pool.execute(`
         INSERT INTO activity_logs (admin_id, action, details, created_at)
         VALUES (?, 'evacuation_center_delete', ?, NOW())
-      `, [req.user?.id || 1, `Deleted evacuation center (ID: ${centerId})`]);
+      `, [finalCreatedBy, `Deleted evacuation center (ID: ${centerId})`]);
     } catch (logError) {
       console.warn('Failed to log evacuation center deletion activity:', logError.message);
     }
@@ -139,7 +154,7 @@ router.delete('/:centerId', async (req, res) => {
   }
 });
 
-// Get resources for a specific evacuation center
+// Get resources for a specific evacuation center (public access for viewing)
 router.get('/:centerId/resources', async (req, res) => {
   const { centerId } = req.params;
   try {
@@ -156,7 +171,7 @@ router.get('/:centerId/resources', async (req, res) => {
 });
 
 // Create a new resource for a center
-router.post('/:centerId/resources', async (req, res) => {
+router.post('/:centerId/resources', authenticateAdmin, async (req, res) => {
   const { centerId } = req.params;
   const { type, name, quantity = 0, picture = null } = req.body || {};
   try {
@@ -170,10 +185,17 @@ router.post('/:centerId/resources', async (req, res) => {
     
     // Log the resource creation
     try {
+      const { created_by } = req.body;
+      const finalCreatedBy = created_by !== null && created_by !== undefined
+        ? created_by
+        : (req.admin?.admin_id || null);
+
+      console.log('Final created_by value to be inserted:', finalCreatedBy);
+
       await pool.execute(`
         INSERT INTO activity_logs (admin_id, action, details, created_at)
         VALUES (?, 'evacuation_resource_create', ?, NOW())
-      `, [req.user?.id || 1, `Created evacuation resource: ${name} (ID: ${result.insertId}) for center ${centerId}`]);
+      `, [finalCreatedBy, `Created evacuation resource: ${name} (ID: ${result.insertId}) for center ${centerId}`]);
     } catch (logError) {
       console.warn('Failed to log evacuation resource creation activity:', logError.message);
     }
@@ -187,7 +209,7 @@ router.post('/:centerId/resources', async (req, res) => {
 });
 
 // Update a resource
-router.put('/:centerId/resources/:resourceId', async (req, res) => {
+router.put('/:centerId/resources/:resourceId', authenticateAdmin, async (req, res) => {
   const { centerId, resourceId } = req.params;
   const { type, name, quantity, picture } = req.body || {};
   try {
@@ -206,10 +228,17 @@ router.put('/:centerId/resources/:resourceId', async (req, res) => {
     
     // Log the resource update
     try {
+      const { created_by } = req.body;
+      const finalCreatedBy = created_by !== null && created_by !== undefined
+        ? created_by
+        : (req.admin?.admin_id || null);
+
+      console.log('Final created_by value to be inserted:', finalCreatedBy);
+
       await pool.execute(`
         INSERT INTO activity_logs (admin_id, action, details, created_at)
         VALUES (?, 'evacuation_resource_update', ?, NOW())
-      `, [req.user?.id || 1, `Updated evacuation resource (ID: ${resourceId}) for center ${centerId}`]);
+      `, [finalCreatedBy, `Updated evacuation resource (ID: ${resourceId}) for center ${centerId}`]);
     } catch (logError) {
       console.warn('Failed to log evacuation resource update activity:', logError.message);
     }
@@ -226,7 +255,7 @@ router.put('/:centerId/resources/:resourceId', async (req, res) => {
 });
 
 // Upload a resource picture (multipart/form-data)
-router.post('/:centerId/resources/:resourceId/picture', upload.single('picture'), async (req, res) => {
+router.post('/:centerId/resources/:resourceId/picture', authenticateAdmin, upload.single('picture'), async (req, res) => {
   const { centerId, resourceId } = req.params;
   try {
     if (!req.file) {
@@ -244,7 +273,7 @@ router.post('/:centerId/resources/:resourceId/picture', upload.single('picture')
 });
 
 // Delete a resource
-router.delete('/:centerId/resources/:resourceId', async (req, res) => {
+router.delete('/:centerId/resources/:resourceId', authenticateAdmin, async (req, res) => {
   const { centerId, resourceId } = req.params;
   try {
     const [result] = await pool.execute('DELETE FROM evacuation_resources WHERE center_id = ? AND resource_id = ?', [centerId, resourceId]);
@@ -254,10 +283,17 @@ router.delete('/:centerId/resources/:resourceId', async (req, res) => {
     
     // Log the resource deletion
     try {
+      const { created_by } = req.body;
+      const finalCreatedBy = created_by !== null && created_by !== undefined
+        ? created_by
+        : (req.admin?.admin_id || null);
+
+      console.log('Final created_by value to be inserted:', finalCreatedBy);
+
       await pool.execute(`
         INSERT INTO activity_logs (admin_id, action, details, created_at)
         VALUES (?, 'evacuation_resource_delete', ?, NOW())
-      `, [req.user?.id || 1, `Deleted evacuation resource (ID: ${resourceId}) from center ${centerId}`]);
+      `, [finalCreatedBy, `Deleted evacuation resource (ID: ${resourceId}) from center ${centerId}`]);
     } catch (logError) {
       console.warn('Failed to log evacuation resource deletion activity:', logError.message);
     }

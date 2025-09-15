@@ -212,10 +212,23 @@ const loginAdmin = async (req, res) => {
             status: adminWithoutPassword.status
         };
 
+        // Generate JWT token
+        const token = jwt.sign(
+            {
+                id: admin.admin_id,
+                email: admin.email,
+                role: 'admin',
+                type: 'admin'
+            },
+            process.env.JWT_SECRET || 'your-secret-key',
+            { expiresIn: '24h' }
+        );
+
         console.log('Admin login successful:', email);
         res.status(200).json({
             success: true,
             message: 'Admin login successful',
+            token,
             admin: mappedAdmin
         });
 
@@ -244,7 +257,7 @@ const loginStaff = async (req, res) => {
 
         // Check if staff exists
         const [staff] = await pool.execute(
-            'SELECT * FROM staff WHERE email = ? AND status = 1 AND availability = "available"',
+            'SELECT * FROM staff WHERE email = ? AND status = 1 AND availability IN ("available", "busy")',
             [email]
         );
 
@@ -490,7 +503,7 @@ const forgotPassword = async (req, res) => {
         } else {
             // Check staff table
             const [staff] = await pool.execute(
-                'SELECT id, email, name FROM staff WHERE email = ? AND status = 1',
+                'SELECT id, email, name FROM staff WHERE email = ? AND status = 1 AND availability IN ("available", "busy")',
                 [email]
             );
 
@@ -532,9 +545,15 @@ const forgotPassword = async (req, res) => {
             console.error('Failed to send password reset OTP:', emailError);
             console.error('Email error details:', emailError.message);
             console.error('Email error stack:', emailError.stack);
+
+            // Return specific error message based on the email error
+            const errorMessage = emailError.message.includes('SMTP')
+                ? emailError.message
+                : 'Failed to send password reset code. Please try again later.';
+
             return res.status(500).json({
                 success: false,
-                message: 'Failed to send password reset code. Please try again later.',
+                message: errorMessage,
                 error: process.env.NODE_ENV === 'development' ? emailError.message : undefined
             });
         }
@@ -595,7 +614,7 @@ const resetPassword = async (req, res) => {
         } else {
             // Check staff table
             const [staff] = await pool.execute(
-                'SELECT id, email FROM staff WHERE email = ? AND status = 1',
+                'SELECT id, email FROM staff WHERE email = ? AND status = 1 AND availability IN ("available", "busy")',
                 [email]
             );
 
@@ -741,6 +760,114 @@ const verifyOTP = async (req, res) => {
     }
 };
 
+// Logout for general users
+const logoutUser = async (req, res) => {
+    try {
+        // Get user info from token for logging
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
+
+        let userId = null;
+        let userEmail = 'unknown';
+
+        if (token) {
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+                if (decoded.type === 'user') {
+                    userId = decoded.id;
+                    userEmail = decoded.email;
+                }
+            } catch (tokenError) {
+                console.log('Could not decode token for user logout logging:', tokenError.message);
+            }
+        }
+
+        // Log user logout activity
+        try {
+            const clientIP = getClientIP(req);
+            // Only log if we have a valid user ID
+            if (userId) {
+                await pool.execute(`
+                    INSERT INTO activity_logs (general_user_id, action, details, ip_address, created_at)
+                    VALUES (?, 'user_logout', ?, ?, NOW())
+                `, [userId, `User ${userEmail} logged out successfully`, clientIP]);
+                console.log('✅ Activity logged: user_logout for user ID:', userId);
+            } else {
+                console.log('⚠️ Could not log user logout: user ID not found in token');
+            }
+        } catch (logError) {
+            console.error('❌ Failed to log user logout activity:', logError.message);
+            // Don't fail the main operation if logging fails
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'User logout successful'
+        });
+
+    } catch (error) {
+        console.error('User logout error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+};
+
+// Logout for staff
+const logoutStaff = async (req, res) => {
+    try {
+        // Get staff info from token for logging
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
+
+        let staffId = null;
+        let staffEmail = 'unknown';
+
+        if (token) {
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+                if (decoded.type === 'staff') {
+                    staffId = decoded.id;
+                    staffEmail = decoded.email;
+                }
+            } catch (tokenError) {
+                console.log('Could not decode token for staff logout logging:', tokenError.message);
+            }
+        }
+
+        // Log staff logout activity
+        try {
+            const clientIP = getClientIP(req);
+            // Only log if we have a valid staff ID
+            if (staffId) {
+                await pool.execute(`
+                    INSERT INTO activity_logs (staff_id, action, details, ip_address, created_at)
+                    VALUES (?, 'staff_logout', ?, ?, NOW())
+                `, [staffId, `Staff ${staffEmail} logged out successfully`, clientIP]);
+                console.log('✅ Activity logged: staff_logout for staff ID:', staffId);
+            } else {
+                console.log('⚠️ Could not log staff logout: staff ID not found in token');
+            }
+        } catch (logError) {
+            console.error('❌ Failed to log staff logout activity:', logError.message);
+            // Don't fail the main operation if logging fails
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Staff logout successful'
+        });
+
+    } catch (error) {
+        console.error('Staff logout error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+};
+
 module.exports = {
     loginUser,
     loginAdmin,
@@ -748,5 +875,7 @@ module.exports = {
     registerUser,
     forgotPassword,
     verifyOTP,
-    resetPassword
+    resetPassword,
+    logoutUser,
+    logoutStaff
 };

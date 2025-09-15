@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Navbar from '../../components/Navbar';
 import { getAuthState, type UserData } from '../../utils/auth';
 import { publicApi } from '../../utils/api';
+import { reverseGeocode, useReverseGeocode } from '../../utils/geocoding';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -90,6 +91,7 @@ export default function Home() {
       description: "Municipal Disaster Risk Reduction & Management Office",
       number: "(043) 311.2935 | 703.2646 | 0917.133.9605",
       icon: "ri-shield-cross-line",
+      logo: "/images/partners/MDRRMO.png",
       priority: "high"
     },
     {
@@ -97,6 +99,7 @@ export default function Home() {
       description: "Municipal Police Station",
       number: "(043) 724.7026 | 0915.254.2577",
       icon: "ri-police-car-line",
+      logo: "/images/partners/pnp.jpg",
       priority: "high"
     },
     {
@@ -104,6 +107,7 @@ export default function Home() {
       description: "Municipal Fire Station",
       number: "(043) 312.1102 | 0915.602.4435",
       icon: "ri-fire-line",
+      logo: "/images/partners/bfp.jpg",
       priority: "high"
     },
     {
@@ -111,6 +115,7 @@ export default function Home() {
       description: "Municipal Health Office",
       number: "(043) 740.1338 | 0908.280.1497",
       icon: "ri-hospital-line",
+      logo: "/images/partners/mho.png",
       priority: "medium"
     },
     {
@@ -118,6 +123,7 @@ export default function Home() {
       description: "Municipal Social Welfare & Development Office",
       number: "(043) 312.1367",
       icon: "ri-community-line",
+      logo: "/images/partners/msdw.jpg",
       priority: "medium"
     },
     {
@@ -125,6 +131,7 @@ export default function Home() {
       description: "Rosario District Hospital",
       number: "(043) 312.0411",
       icon: "ri-hospital-fill",
+      logo: "/images/partners/mvm.jpg",
       priority: "medium"
     },
     {
@@ -132,6 +139,7 @@ export default function Home() {
       description: "Batangas II Electric Cooperative Inc.",
       number: "0917.550.0754 | 0998.548.6153",
       icon: "ri-flashlight-line",
+      logo: "/images/partners/batelec.jpg",
       priority: "medium"
     },
     {
@@ -139,9 +147,15 @@ export default function Home() {
       description: "Philippine Red Cross Batangas Chapter - Lipa City Branch",
       number: "(043) 740.0768 | 0917.142.9378",
       icon: "ri-first-aid-kit-line",
+      logo: "/images/partners/prc.png",
       priority: "medium"
     }
   ];
+
+  // Reverse geocode the given coordinates
+  const latitude = 13.805338;
+  const longitude = 121.437975;
+  const { locationName, loading: locationLoading, error: locationError } = useReverseGeocode(latitude, longitude);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100">
@@ -190,10 +204,7 @@ export default function Home() {
                 <div className="text-left">
                   {/* Philippine Flag and MDRRMO Logo */}
                   <div className="flex items-center mb-4 md:mb-6">
-                    <div className="w-14 h-14 md:w-16 md:h-16 bg-white rounded-xl flex items-center justify-center mr-4 shadow-lg">
-                      <i className="ri-government-line text-2xl md:text-3xl text-blue-600"></i>
-                    </div>
-                    <div className="w-14 h-10 md:w-16 md:h-12 bg-gradient-to-b from-blue-500 via-white to-red-500 rounded-lg shadow-lg mr-4"></div>
+                 
                   </div>
 
                   {/* MDRRMO Title */}
@@ -244,7 +255,7 @@ export default function Home() {
               {isLoggedIn ? `Welcome back, ${userData?.firstName || 'User'}!` : 'Emergency Services'}
             </h2>
             <p className="text-base md:text-xl text-gray-600 mb-8 md:mb-12">
-              {isLoggedIn ? 'Access your emergency management tools' : 'Comprehensive disaster risk reduction and emergency response services for Rosario, Batangas'}
+              {isLoggedIn ? 'Access your emergency management tools' : `Comprehensive disaster risk reduction and emergency response services for ${locationName}`}
             </p>
           </div>
 
@@ -421,41 +432,90 @@ export default function Home() {
       </section>
 
       {/* Stats */}
-      <section className="bg-white py-14 md:py-16">
+      <section className="bg-gradient-to-br from-blue-50 to-indigo-50 py-16 md:py-20">
         <div className="container mx-auto px-4 max-w-6xl">
+          {/* Section Header */}
+        
+
           {loadingStats ? (
-            <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 text-center">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
               {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="rounded-xl border border-gray-200 p-5 md:p-6">
-                  <div className="text-2xl md:text-3xl font-bold text-blue-700 mb-1 animate-pulse">
-                    <div className="h-8 bg-gray-200 rounded w-16 mx-auto"></div>
-                  </div>
-                  <div className="text-gray-600 text-sm">
-                    <div className="h-4 bg-gray-200 rounded w-20 mx-auto"></div>
+                <div key={i} className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 md:p-8 hover:shadow-xl transition-all duration-300">
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <div className="w-12 h-12 md:w-16 md:h-16 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center mb-4 animate-pulse">
+                      <div className="w-6 h-6 bg-gray-300 rounded"></div>
+                    </div>
+                    <div className="text-2xl md:text-3xl font-bold text-blue-700 mb-2 animate-pulse">
+                      <div className="h-8 bg-gray-200 rounded w-16 mx-auto"></div>
+                    </div>
+                    <div className="text-gray-600 text-sm animate-pulse">
+                      <div className="h-4 bg-gray-200 rounded w-20 mx-auto"></div>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
           ) : statsError ? (
-            <div className="text-center text-gray-600">
-              <i className="ri-error-warning-line text-2xl text-yellow-500 mb-2"></i>
-              <p>Unable to load statistics</p>
+            <div className="text-center bg-white rounded-2xl shadow-lg border border-gray-100 p-8 md:p-12">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i className="ri-error-warning-line text-2xl text-red-500"></i>
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">Unable to Load Statistics</h3>
+              <p className="text-gray-600">We're experiencing technical difficulties. Please try again later.</p>
             </div>
           ) : (
-            <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 text-center">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
               {[
-                { label: 'Responders', value: `${stats.responders}+` },
-                { label: 'Evacuation Centers', value: stats.evacuationCenters.toString() },
-                { label: 'Residents Covered', value: `${stats.residentsCovered}+` },
-                { label: 'Total Incidents', value: stats.totalIncidents.toString() }
+                {
+                  label: 'Responders',
+                  value: `${stats.responders}+`,
+                  icon: 'ri-user-star-line',
+                  color: 'from-blue-500 to-blue-600',
+                  bgColor: 'from-blue-50 to-blue-100'
+                },
+                {
+                  label: 'Evacuation Centers',
+                  value: stats.evacuationCenters.toString(),
+                  icon: 'ri-building-2-line',
+                  color: 'from-green-500 to-green-600',
+                  bgColor: 'from-green-50 to-green-100'
+                },
+                {
+                  label: 'Residents Covered',
+                  value: `${stats.residentsCovered}+`,
+                  icon: 'ri-shield-user-line',
+                  color: 'from-purple-500 to-purple-600',
+                  bgColor: 'from-purple-50 to-purple-100'
+                },
+                {
+                  label: 'Total Incidents',
+                  value: stats.totalIncidents.toString(),
+                  icon: 'ri-alert-line',
+                  color: 'from-red-500 to-red-600',
+                  bgColor: 'from-red-50 to-red-100'
+                }
               ].map((s, i) => (
-                <div key={i} className="rounded-xl border border-gray-200 p-5 md:p-6">
-                  <div className="text-2xl md:text-3xl font-bold text-blue-700 mb-1">{s.value}</div>
-                  <div className="text-gray-600 text-sm">{s.label}</div>
+                <div key={i} className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 md:p-8 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group">
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <div className={`w-12 h-12 md:w-16 md:h-16 bg-gradient-to-br ${s.bgColor} rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300`}>
+                      <i className={`${s.icon} text-xl md:text-2xl text-gray-700`}></i>
+                    </div>
+                    <div className={`text-2xl md:text-3xl font-bold bg-gradient-to-r ${s.color} bg-clip-text text-transparent mb-2`}>
+                      {s.value}
+                    </div>
+                    <div className="text-gray-600 text-sm font-medium">{s.label}</div>
+                  </div>
                 </div>
               ))}
             </div>
           )}
+
+          {/* Additional Info */}
+          <div className="text-center mt-12 md:mt-16">
+            <p className="text-sm text-gray-500">
+              Statistics updated in real-time • Last updated: {new Date().toLocaleDateString()}
+            </p>
+          </div>
         </div>
       </section>
 
@@ -584,7 +644,7 @@ export default function Home() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center">
                   <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center mr-3">
-                    <i className="ri-phone-line text-xl"></i>
+                    <img src="/images/partners/MDRRMO.png" alt="MDRRMO Logo" className="w-8 h-8 object-contain rounded-full" />
                   </div>
                   <div>
                     <h3 className="text-lg font-bold">Emergency Hotlines</h3>
@@ -617,7 +677,7 @@ export default function Home() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center flex-1 min-w-0">
                           <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
-                            <i className={`${hotline.icon} text-lg text-red-600`}></i>
+                            <img src={hotline.logo} alt={`${hotline.name} Logo`} className="w-8 h-8 object-contain rounded-full" />
                           </div>
                           <div className="min-w-0 flex-1">
                             <h5 className="font-semibold text-gray-900 text-sm mb-1 truncate">{hotline.name}</h5>
@@ -653,7 +713,7 @@ export default function Home() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center flex-1 min-w-0">
                           <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-3 flex-shrink-0">
-                            <i className={`${hotline.icon} text-lg text-blue-600`}></i>
+                            <img src={hotline.logo} alt={`${hotline.name} Logo`} className="w-8 h-8 object-contain rounded-full" />
                           </div>
                           <div className="min-w-0 flex-1">
                             <h5 className="font-semibold text-gray-900 text-sm mb-1 truncate">{hotline.name}</h5>

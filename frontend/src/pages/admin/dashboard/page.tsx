@@ -29,6 +29,8 @@ const AdminDashboard: React.FC = () => {
     activeAlerts: 0
   });
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+  const [incidentTrend, setIncidentTrend] = useState<string | null>(null);
+  const [userTrend, setUserTrend] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,6 +56,34 @@ const AdminDashboard: React.FC = () => {
         });
 
         setRecentActivity(response.recentActivity || []);
+
+        // Set trends based on response data
+        if (response.trends) {
+          // Example: calculate percentage change for incidents and users
+          const incidentsTrendData = response.trends.incidents;
+          const usersTrendData = response.trends.users;
+
+          if (incidentsTrendData && incidentsTrendData.length >= 2) {
+            const latest = incidentsTrendData[incidentsTrendData.length - 1].count;
+            const previous = incidentsTrendData[incidentsTrendData.length - 2].count;
+            const change = previous === 0 ? 0 : ((latest - previous) / previous) * 100;
+            setIncidentTrend(`${change >= 0 ? '+' : ''}${change.toFixed(1)}% from last period`);
+          } else {
+            setIncidentTrend(null);
+          }
+
+          if (usersTrendData && usersTrendData.length >= 2) {
+            const latest = usersTrendData[usersTrendData.length - 1].count;
+            const previous = usersTrendData[usersTrendData.length - 2].count;
+            const change = previous === 0 ? 0 : ((latest - previous) / previous) * 100;
+            setUserTrend(`${change >= 0 ? '+' : ''}${change.toFixed(1)}% from last period`);
+          } else {
+            setUserTrend(null);
+          }
+        } else {
+          setIncidentTrend(null);
+          setUserTrend(null);
+        }
       } else {
         setError('Failed to fetch dashboard statistics');
       }
@@ -146,7 +176,7 @@ const AdminDashboard: React.FC = () => {
           value={stats.totalIncidents}
           icon="ri-error-warning-line"
           color="bg-red-500"
-          trend="+12% from last month"
+          trend={incidentTrend || undefined}
         />
         <StatCard
           title="Active Incidents"
@@ -159,7 +189,7 @@ const AdminDashboard: React.FC = () => {
           value={stats.totalUsers}
           icon="ri-user-line"
           color="bg-blue-500"
-          trend="+8% from last month"
+          trend={userTrend || undefined}
         />
         <StatCard
           title="Staff Members"

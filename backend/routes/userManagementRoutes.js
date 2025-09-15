@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/conn');
+const { authenticateAdmin } = require('../middleware/authMiddleware');
 
 // GET - Get all users with pagination and filtering
 router.get('/', async (req, res) => {
@@ -129,7 +130,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // PUT - Update user status
-router.put('/:id/status', async (req, res) => {
+router.put('/:id/status', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -145,30 +146,52 @@ router.put('/:id/status', async (req, res) => {
       });
     }
     
-    // Check if user exists
+    // Check if user exists and get current status and name
     const [existingUsers] = await pool.execute(
-      'SELECT user_id FROM general_users WHERE user_id = ?',
+      'SELECT user_id, first_name, last_name, status FROM general_users WHERE user_id = ?',
       [id]
     );
-    
+
     if (existingUsers.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
       });
     }
-    
+
+    const user = existingUsers[0];
+    const oldStatus = user.status;
+    const userName = `${user.first_name} ${user.last_name}`;
+
+    // Function to get status text
+    const getStatusText = (status) => {
+      if (status === 1) return 'ACTIVE';
+      if (status === 0) return 'INACTIVE';
+      if (status === -1) return 'SUSPENDED';
+      return 'UNKNOWN';
+    };
+
     // Update user status
     await pool.execute(
       'UPDATE general_users SET status = ? WHERE user_id = ?',
       [statusValue, id]
     );
-    
-    // Log the status change
+
+    // Log the status change with detailed information
+    const { created_by } = req.body;
+    const finalCreatedBy = created_by !== null && created_by !== undefined
+      ? created_by
+      : (req.admin?.admin_id || null);
+
+    console.log('Final created_by value to be inserted:', finalCreatedBy);
+
+    const oldStatusText = getStatusText(oldStatus);
+    const newStatusText = getStatusText(statusValue);
+
     await pool.execute(`
       INSERT INTO activity_logs (admin_id, action, details, created_at)
       VALUES (?, 'user_status_update', ?, NOW())
-    `, [req.user?.id || 1, `Updated user ${id} status to ${status}`]);
+    `, [finalCreatedBy, `Updated user(${userName}) ${id} ${oldStatusText} status to ${newStatusText}`]);
     
     res.json({
       success: true,
@@ -186,7 +209,7 @@ router.put('/:id/status', async (req, res) => {
 });
 
 // PUT - Update user information
-router.put('/:id', async (req, res) => {
+router.put('/:id', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { first_name, last_name, email, user_type } = req.body;
@@ -238,10 +261,17 @@ router.put('/:id', async (req, res) => {
     `, [first_name, last_name, email, id]);
     
     // Log the update
+    const { created_by } = req.body;
+    const finalCreatedBy = created_by !== null && created_by !== undefined
+      ? created_by
+      : (req.admin?.admin_id || null);
+
+    console.log('Final created_by value to be inserted:', finalCreatedBy);
+
     await pool.execute(`
       INSERT INTO activity_logs (admin_id, action, details, created_at)
       VALUES (?, 'user_info_update', ?, NOW())
-    `, [req.user?.id || 1, `Updated user ${id} information`]);
+    `, [finalCreatedBy, `Updated user ${id} information`]);
     
     res.json({
       success: true,
@@ -259,7 +289,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE - Delete user (soft delete)
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     console.log('Deleting user:', id);
@@ -286,10 +316,17 @@ router.delete('/:id', async (req, res) => {
     );
     
     // Log the deletion
+    const { created_by } = req.body;
+    const finalCreatedBy = created_by !== null && created_by !== undefined
+      ? created_by
+      : (req.admin?.admin_id || null);
+
+    console.log('Final created_by value to be inserted:', finalCreatedBy);
+
     await pool.execute(`
       INSERT INTO activity_logs (admin_id, action, details, created_at)
       VALUES (?, 'user_delete', ?, NOW())
-    `, [req.user?.id || 1, `Deleted user ${id} (${user.name})`]);
+    `, [finalCreatedBy, `Deleted user ${id} (${user.name})`]);
     
     res.json({
       success: true,

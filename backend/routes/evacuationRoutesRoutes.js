@@ -232,10 +232,15 @@ router.post('/', async (req, res) => {
     const routeId = result.insertId;
     
     // Log the creation
+    const { created_by } = req.body;
+    const finalCreatedBy = created_by !== null && created_by !== undefined
+      ? created_by
+      : (req.admin?.admin_id || null);
+
     await pool.execute(`
       INSERT INTO activity_logs (admin_id, action, details, created_at)
       VALUES (?, 'evacuation_route_create', ?, NOW())
-    `, [req.user?.id || 1, `Created new evacuation route: ${name}`]);
+    `, [finalCreatedBy, `Created new evacuation route: ${name}`]);
     
     res.status(201).json({
       success: true,
@@ -299,10 +304,15 @@ router.put('/:id', async (req, res) => {
     ]);
     
     // Log the update
+    const { created_by } = req.body;
+    const finalCreatedBy = created_by !== null && created_by !== undefined
+      ? created_by
+      : (req.admin?.admin_id || null);
+
     await pool.execute(`
       INSERT INTO activity_logs (admin_id, action, details, created_at)
       VALUES (?, 'evacuation_route_update', ?, NOW())
-    `, [req.user?.id || 1, `Updated evacuation route: ${name} (ID: ${id})`]);
+    `, [finalCreatedBy, `Updated evacuation route: ${name} (ID: ${id})`]);
     
     res.json({
       success: true,
@@ -344,10 +354,15 @@ router.delete('/:id', async (req, res) => {
     await pool.execute('DELETE FROM evacuation_routes WHERE id = ?', [id]);
     
     // Log the deletion
+    const { created_by } = req.body;
+    const finalCreatedBy = created_by !== null && created_by !== undefined
+      ? created_by
+      : (req.admin?.admin_id || null);
+
     await pool.execute(`
       INSERT INTO activity_logs (admin_id, action, details, created_at)
       VALUES (?, 'evacuation_route_delete', ?, NOW())
-    `, [req.user?.id || 1, `Deleted evacuation route: ${routeName} (ID: ${id})`]);
+    `, [finalCreatedBy, `Deleted evacuation route: ${routeName} (ID: ${id})`]);
     
     res.json({
       success: true,

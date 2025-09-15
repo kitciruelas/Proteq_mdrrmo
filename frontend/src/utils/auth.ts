@@ -17,6 +17,7 @@ export interface UserData {
   state?: string;
   zipCode?: string;
   userType?: 'user' | 'admin' | 'staff';
+  role?: string; // Admin role field
   // Authentication token
   token?: string;
   // Additional database fields
@@ -25,7 +26,7 @@ export interface UserData {
   college?: string;
   created_at?: string;
   updated_at?: string;
-  status?: number;
+  status?: number | string; // Can be number or string
   // Team assignment fields
   assigned_team_id?: number;
 }

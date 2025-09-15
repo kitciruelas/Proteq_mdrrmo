@@ -2,16 +2,46 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/conn');
 const { sendIncidentAssignmentEmail, sendStaffAssignmentEmail } = require('../services/emailService');
-const { authenticateUser } = require('../middleware/authMiddleware');
+const { authenticateUser, authenticateAdmin, authenticateStaff } = require('../middleware/authMiddleware');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 
-// Submit incident report
-router.post('/report', authenticateUser, async (req, res) => {
-  console.log('🚨 INCIDENT REPORT ROUTE HIT!');
-  console.log('Request method:', req.method);
-  console.log('Request URL:', req.url);
-  console.log('Request headers:', req.headers);
-  console.log('Raw request body:', req.body);
+// Configure multer storage for incident attachments
+const uploadsDir = path.join(__dirname, '..', 'uploads', 'incidents');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadsDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const safeOriginal = (file.originalname || 'file').replace(/[^a-zA-Z0-9_.-]/g, '_');
+    cb(null, uniqueSuffix + '-' + safeOriginal);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB per file
+    files: 5 // max 5 files
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Only images are allowed.'), false);
+    }
+  }
+});
+
+// Submit incident report (authenticated users)
+router.post('/report', authenticateUser, upload.array('attachments', 5), async (req, res) => {
   try {
     const {
       incidentType,
@@ -23,16 +53,9 @@ router.post('/report', authenticateUser, async (req, res) => {
       safetyStatus
     } = req.body;
 
-    console.log('=== BACKEND INCIDENT REPORT SUBMISSION ===');
-    console.log('Full request body:', req.body);
-    console.log('Individual field validation:');
-    console.log('- incidentType:', incidentType, '(valid:', !!incidentType, ')');
-    console.log('- description:', description, '(valid:', !!description, ')');
-    console.log('- location:', location, '(valid:', !!location, ')');
-    console.log('- priorityLevel:', priorityLevel, '(valid:', !!priorityLevel, ')');
-    console.log('- safetyStatus:', safetyStatus, '(valid:', !!safetyStatus, ')');
-    console.log('- latitude:', latitude);
-    console.log('- longitude:', longitude);
+    // Get uploaded files
+    const attachments = req.files || [];
+    console.log('Uploaded attachments:', attachments.length);
 
     // Validate required fields with better checking
     const missingFields = [];
@@ -117,19 +140,28 @@ router.post('/report', authenticateUser, async (req, res) => {
     // Get user ID from authenticated request
     const reportedBy = req.user.user_id;
 
-    // Insert incident report into database
+    // Prepare description
+    let fullDescription = description;
+    let attachmentFilenames = null;
+    if (attachments.length > 0) {
+      attachmentFilenames = attachments.map(file => file.filename).join(',');
+    }
+    fullDescription += `\n\nLocation: ${location}${latitude && longitude ? `\nGPS Coordinates: ${latitude}, ${longitude}` : ''}`;
+
+    // Insert incident report into database with attachment field
     const [result] = await pool.execute(
       `INSERT INTO incident_reports
-       (incident_type, description, longitude, latitude, date_reported, status, reported_by, priority_level, reporter_safe_status, validation_status)
-       VALUES (?, ?, ?, ?, NOW(), 'pending', ?, ?, ?, 'unvalidated')`,
+       (incident_type, description, longitude, latitude, date_reported, status, reported_by, priority_level, reporter_safe_status, validation_status, attachment)
+       VALUES (?, ?, ?, ?, NOW(), 'pending', ?, ?, ?, 'unvalidated', ?)`,
       [
         incidentType,
-        `${description}\n\nLocation: ${location}${latitude && longitude ? `\nGPS Coordinates: ${latitude}, ${longitude}` : ''}`,
+        fullDescription,
         finalLng,
         finalLat,
         reportedBy,
         mappedPriority,
-        mappedSafety
+        mappedSafety,
+        attachmentFilenames
       ]
     );
 
@@ -169,32 +201,296 @@ router.post('/report', authenticateUser, async (req, res) => {
   }
 });
 
+// Submit incident report (guest users)
+router.post('/report-guest', upload.array('attachments', 5), async (req, res) => {
+  try {
+    const {
+      incidentType,
+      description,
+      location,
+      latitude,
+      longitude,
+      priorityLevel,
+      safetyStatus,
+      guestName,
+      guestContact
+    } = req.body;
+
+    // Get uploaded files
+    const attachments = req.files || [];
+    console.log('Uploaded attachments (guest):', attachments.length);
+
+    // Validate required fields with better checking
+    const missingFields = [];
+
+    if (!incidentType || incidentType.trim() === '') {
+      missingFields.push('incidentType');
+      console.log('❌ incidentType is missing or empty:', incidentType);
+    } else {
+      console.log('✅ incidentType is valid:', incidentType);
+    }
+
+    if (!description || description.trim() === '') {
+      missingFields.push('description');
+      console.log('❌ description is missing or empty:', description);
+    } else {
+      console.log('✅ description is valid:', description.length, 'characters');
+    }
+
+    if (!location || location.trim() === '') {
+      missingFields.push('location');
+      console.log('❌ location is missing or empty:', location);
+    } else {
+      console.log('✅ location is valid:', location);
+    }
+
+    if (!priorityLevel || priorityLevel.trim() === '') {
+      missingFields.push('priorityLevel');
+      console.log('❌ priorityLevel is missing or empty:', priorityLevel);
+    } else {
+      console.log('✅ priorityLevel is valid:', priorityLevel);
+    }
+
+    if (!safetyStatus || safetyStatus.trim() === '') {
+      missingFields.push('safetyStatus');
+      console.log('❌ safetyStatus is missing or empty:', safetyStatus);
+    } else {
+      console.log('✅ safetyStatus is valid:', safetyStatus);
+    }
+
+    if (!guestName || guestName.trim() === '') {
+      missingFields.push('guestName');
+      console.log('❌ guestName is missing or empty:', guestName);
+    } else {
+      console.log('✅ guestName is valid:', guestName);
+    }
+
+    if (!guestContact || guestContact.trim() === '') {
+      missingFields.push('guestContact');
+      console.log('❌ guestContact is missing or empty:', guestContact);
+    } else {
+      console.log('✅ guestContact is valid:', guestContact);
+    }
+
+    if (missingFields.length > 0) {
+      console.log('🚫 VALIDATION FAILED - Missing fields:', missingFields);
+      return res.status(400).json({
+        success: false,
+        message: `Missing required fields: ${missingFields.join(', ')}`,
+        missingFields: missingFields,
+        receivedData: req.body
+      });
+    }
+
+    console.log('✅ VALIDATION PASSED - All required fields present');
+
+    // Use provided coordinates or default coordinates for Rosario, Batangas
+    const finalLat = latitude || 13.8457;
+    const finalLng = longitude || 121.2104;
+
+    // Current timestamp for date_reported
+    const dateTime = new Date();
+
+    // Map priority levels to database enum values
+    const validPriorities = ['low', 'moderate', 'high', 'critical'];
+    const mappedPriority = priorityLevel === 'medium' ? 'moderate' : priorityLevel;
+    if (!validPriorities.includes(mappedPriority)) {
+      console.log('⚠️ Invalid priority level:', priorityLevel);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid priority level. Must be one of: low, medium, high, critical'
+      });
+    }
+
+    // Validate and map safety status to database enum values
+    const validSafetyStatuses = ['safe', 'injured', 'unknown'];
+    const mappedSafety = safetyStatus === 'danger' ? 'unknown' : safetyStatus;
+    if (!validSafetyStatuses.includes(mappedSafety)) {
+      console.log('⚠️ Invalid safety status:', safetyStatus);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid safety status. Must be one of: safe, injured, danger'
+      });
+    };
+
+    // Use a transaction to ensure data consistency
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    let incidentId = null;
+    let dbInsertSuccessful = false;
+
+    console.log('🔄 [GUEST INCIDENT] Starting database transaction...');
+
+    try {
+      console.log('📝 [GUEST INCIDENT] Preparing to insert incident report...');
+
+      // Prepare description
+      let fullDescription = description;
+      let attachmentFilenames = null;
+      if (attachments.length > 0) {
+        attachmentFilenames = attachments.map(file => file.filename).join(',');
+      }
+      fullDescription += `\n\nLocation: ${location}${latitude && longitude ? `\nGPS Coordinates: ${latitude}, ${longitude}` : ''}`;
+
+      // Insert incident report into database with NULL as reported_by for guests
+      const [result] = await connection.execute(
+        `INSERT INTO incident_reports
+         (incident_type, description, longitude, latitude, date_reported, status, reported_by, priority_level, reporter_safe_status, validation_status, attachment)
+         VALUES (?, ?, ?, ?, NOW(), 'pending', NULL, ?, ?, 'unvalidated', ?)`,
+        [
+          incidentType,
+          fullDescription,
+          finalLng,
+          finalLat,
+          mappedPriority,
+          mappedSafety,
+          attachmentFilenames
+        ]
+      );
+
+      console.log('✅ [GUEST INCIDENT] Incident report inserted successfully with ID:', result.insertId);
+
+      // Insert guest information into incident_report_guests table
+      await connection.execute(
+        `INSERT INTO incident_report_guests (incident_id, guest_name, guest_contact)
+         VALUES (?, ?, ?)`,
+        [result.insertId, guestName.trim(), guestContact.trim()]
+      );
+
+      console.log('✅ [GUEST INCIDENT] Guest information inserted successfully');
+
+      // Commit the transaction
+      await connection.commit();
+      console.log('✅ [GUEST INCIDENT] Transaction committed successfully');
+
+      // Mark DB insert as successful
+      dbInsertSuccessful = true;
+
+      // Use the incident ID as the response ID
+      incidentId = result.insertId;
+    } catch (error) {
+      // Rollback on error
+      await connection.rollback();
+      console.error('❌ [GUEST INCIDENT] Transaction rolled back due to error:', error);
+      throw error;
+    } finally {
+      connection.release();
+      console.log('🔌 [GUEST INCIDENT] Database connection released');
+    }
+
+    console.log('📋 [GUEST INCIDENT] Guest information saved for incident:', incidentId);
+
+    // Log guest incident report submission (non-critical operation)
+    try {
+      const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip || 'unknown';
+      await pool.execute(`
+        INSERT INTO activity_logs (general_user_id, action, details, ip_address, created_at)
+        VALUES (NULL, 'guest_incident_report_submit', ?, ?, NOW())
+      `, [`Guest incident report submitted: ${incidentType} at ${location} by ${guestName}`, clientIP]);
+      console.log('✅ [GUEST INCIDENT] Activity logged: guest_incident_report_submit');
+    } catch (logError) {
+      console.error('⚠️ [GUEST INCIDENT] Failed to log guest incident report activity (non-critical):', logError.message);
+      // Don't throw error here as DB insert was successful
+    }
+
+    console.log('📤 [GUEST INCIDENT] Sending success response...');
+
+    res.status(201).json({
+      success: true,
+      message: 'Guest incident report submitted successfully',
+      incidentId: incidentId,
+      data: {
+        incidentType,
+        location,
+        priorityLevel,
+        safetyStatus,
+        coordinates: { latitude: finalLat, longitude: finalLng },
+        guestName,
+        guestContact
+      }
+    });
+
+    console.log('✅ [GUEST INCIDENT] Response sent successfully');
+
+  } catch (error) {
+    console.error('❌ Error submitting guest incident report:', error);
+    console.error('❌ Error details:', {
+      message: error.message,
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage,
+      stack: error.stack
+    });
+
+    // Log additional context for debugging
+    console.error('❌ Request body that caused the error:', req.body);
+    console.error('❌ Current timestamp:', new Date().toISOString());
+
+    // Check if this is a database connection/refused error after successful insert
+    if (error.code === 'ECONNREFUSED' || error.message?.includes('connection') || error.message?.includes('refused')) {
+      console.log('⚠️ Connection error detected, but checking if DB insert was successful...');
+
+      // If we have an incidentId, it means the DB insert was successful
+      if (incidentId && dbInsertSuccessful) {
+        console.log('✅ DB insert was successful despite connection error, returning 200 OK');
+        return res.status(200).json({
+          success: true,
+          message: 'Guest incident report submitted successfully (with minor connection issue)',
+          incidentId: incidentId,
+          data: {
+            incidentType,
+            location,
+            priorityLevel,
+            safetyStatus,
+            coordinates: { latitude: finalLat, longitude: finalLng },
+            guestName,
+            guestContact
+          },
+          warning: 'Report saved successfully but there was a minor connection issue'
+        });
+      }
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to submit guest incident report. Please try again.',
+      error: process.env.NODE_ENV === 'development' ? {
+        message: error.message,
+        code: error.code,
+        errno: error.errno,
+        sqlState: error.sqlState,
+        sqlMessage: error.sqlMessage,
+        stack: error.stack
+      } : undefined
+    });
+  }
+});
+
 // Get all incident reports (for admin/staff use)
 router.get('/', async (req, res) => {
   try {
-    console.log('🔍 Fetching all incident reports...');
-    
     const [incidents] = await pool.execute(`
-      SELECT 
+      SELECT
         ir.*,
         t.name as assigned_team_name,
         s.name as assigned_staff_name,
-        CONCAT(gu.first_name, ' ', gu.last_name) as reporter_name
+        CONCAT(gu.first_name, ' ', gu.last_name) as reporter_name,
+        gu.phone as reporter_phone,
+        irg.guest_name,
+        irg.guest_contact,
+        CASE 
+          WHEN ir.reported_by IS NULL THEN 'guest'
+          ELSE 'user'
+        END as reporter_type
       FROM incident_reports ir
       LEFT JOIN teams t ON ir.assigned_team_id = t.id
       LEFT JOIN staff s ON ir.assigned_staff_id = s.id
       LEFT JOIN general_users gu ON ir.reported_by = gu.user_id
+      LEFT JOIN incident_report_guests irg ON ir.incident_id = irg.incident_id
       ORDER BY ir.date_reported DESC
     `);
-
-    console.log('📋 Raw incidents from DB:', incidents);
-    console.log('📊 Sample incident data:', incidents.length > 0 ? {
-      incident_id: incidents[0].incident_id,
-      reported_by: incidents[0].reported_by,
-      reporter_name: incidents[0].reporter_name,
-      assigned_team_name: incidents[0].assigned_team_name,
-      assigned_staff_name: incidents[0].assigned_staff_name
-    } : 'No incidents found');
 
     res.json({
       success: true,
@@ -218,15 +514,23 @@ router.get('/:id', async (req, res) => {
     const { id } = req.params;
 
     const [incidents] = await pool.execute(`
-      SELECT 
+      SELECT
         ir.*,
         t.name as assigned_team_name,
         s.name as assigned_staff_name,
-        CONCAT(gu.first_name, ' ', gu.last_name) as reporter_name
+        CONCAT(gu.first_name, ' ', gu.last_name) as reporter_name,
+        gu.phone as reporter_phone,
+        irg.guest_name,
+        irg.guest_contact,
+        CASE 
+          WHEN ir.reported_by IS NULL THEN 'guest'
+          ELSE 'user'
+        END as reporter_type
       FROM incident_reports ir
       LEFT JOIN teams t ON ir.assigned_team_id = t.id
       LEFT JOIN staff s ON ir.assigned_staff_id = s.id
       LEFT JOIN general_users gu ON ir.reported_by = gu.user_id
+      LEFT JOIN incident_report_guests irg ON ir.incident_id = irg.incident_id
       WHERE ir.incident_id = ?
     `, [id]);
 
@@ -252,7 +556,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // PUT - Update incident validation status
-router.put('/:id/validate', async (req, res) => {
+router.put('/:id/validate', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { validationStatus, validationNotes = '', assignedTo = null } = req.body;
@@ -275,7 +579,7 @@ router.put('/:id/validate', async (req, res) => {
 
     // Check if incident exists
     const [incidents] = await pool.execute(
-      'SELECT incident_id FROM incident_reports WHERE incident_id = ?',
+      'SELECT incident_id, validation_status FROM incident_reports WHERE incident_id = ?',
       [id]
     );
 
@@ -285,6 +589,8 @@ router.put('/:id/validate', async (req, res) => {
         message: 'Incident report not found'
       });
     }
+
+    const oldValidationStatus = incidents[0].validation_status;
 
     // If assigning to staff, verify staff exists (only if assignedTo is not null)
     if (assignedTo !== null) {
@@ -318,13 +624,36 @@ router.put('/:id/validate', async (req, res) => {
       WHERE incident_id = ?
     `, [validationStatus, validationNotes, assignedTo, validationStatus, validationStatus, id]);
 
+    // Log activity if validation status changed
+    if (oldValidationStatus !== validationStatus) {
+      try {
+        const { created_by } = req.body;
+        const finalCreatedBy = created_by !== null && created_by !== undefined
+          ? created_by
+          : (req.admin?.admin_id || req.user?.id || null);
+
+        console.log('Final created_by value to be inserted:', finalCreatedBy);
+
+        const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip || 'unknown';
+
+        await pool.execute(`
+          INSERT INTO activity_logs (admin_id, action, details, ip_address, created_at)
+          VALUES (?, 'incident_validation_update', ?, ?, NOW())
+        `, [finalCreatedBy, `Incident #${id} validation status changed from ${oldValidationStatus} to ${validationStatus}`, clientIP]);
+        console.log('✅ Activity logged: incident_validation_update');
+      } catch (logError) {
+        console.error('❌ Failed to log validation update activity:', logError.message);
+      }
+    }
+
     // Fetch the updated incident data
     const [updatedIncident] = await pool.execute(`
-      SELECT 
+      SELECT
         ir.*,
         t.name as assigned_team_name,
         s.name as assigned_staff_name,
-        CONCAT(gu.first_name, ' ', gu.last_name) as reporter_name
+        CONCAT(gu.first_name, ' ', gu.last_name) as reporter_name,
+        gu.phone as reporter_phone
       FROM incident_reports ir
       LEFT JOIN teams t ON ir.assigned_team_id = t.id
       LEFT JOIN staff s ON ir.assigned_staff_id = s.id
@@ -348,7 +677,7 @@ router.put('/:id/validate', async (req, res) => {
 });
 
 // PUT - Assign team to incident
-router.put('/:id/assign-team', async (req, res) => {
+router.put('/:id/assign-team', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { teamId } = req.body;
@@ -432,6 +761,26 @@ router.put('/:id/assign-team', async (req, res) => {
 
     console.log('✅ Incident updated with team assignment');
 
+    // Log team assignment activity
+    try {
+      const { created_by } = req.body;
+      const finalCreatedBy = created_by !== null && created_by !== undefined
+        ? created_by
+        : (req.admin?.admin_id || req.user?.id || null);
+
+      console.log('Final created_by value to be inserted:', finalCreatedBy);
+
+      const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip || 'unknown';
+
+      await pool.execute(`
+        INSERT INTO activity_logs (admin_id, action, details, ip_address, created_at)
+        VALUES (?, 'incident_assign_team', ?, ?, NOW())
+      `, [finalCreatedBy, `Incident #${id} assigned to team "${team.name}" (${teamMembers.length} members)`, clientIP]);
+      console.log('✅ Activity logged: incident_assign_team');
+    } catch (logError) {
+      console.error('❌ Failed to log team assignment activity:', logError.message);
+    }
+
     // Prepare incident data for email
     const incidentData = {
       id: incident.incident_id,
@@ -500,7 +849,7 @@ router.put('/:id/assign-team', async (req, res) => {
 });
 
 // PUT - Assign staff to incident
-router.put('/:id/assign-staff', async (req, res) => {
+router.put('/:id/assign-staff', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { staffId } = req.body;
@@ -563,6 +912,26 @@ router.put('/:id/assign-staff', async (req, res) => {
     );
 
     console.log('✅ Incident updated with staff assignment');
+
+    // Log staff assignment activity
+    try {
+      const { created_by } = req.body;
+      const finalCreatedBy = created_by !== null && created_by !== undefined
+        ? created_by
+        : (req.admin?.admin_id || req.user?.id || null);
+
+      console.log('Final created_by value to be inserted:', finalCreatedBy);
+
+      const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip || 'unknown';
+
+      await pool.execute(`
+        INSERT INTO activity_logs (admin_id, action, details, ip_address, created_at)
+        VALUES (?, 'incident_assign_staff', ?, ?, NOW())
+      `, [finalCreatedBy, `Incident #${id} assigned to staff "${staffMember.name}" (${staffMember.position})`, clientIP]);
+      console.log('✅ Activity logged: incident_assign_staff');
+    } catch (logError) {
+      console.error('❌ Failed to log staff assignment activity:', logError.message);
+    }
 
     // Prepare incident data for email
     const incidentData = {
@@ -634,7 +1003,7 @@ router.put('/:id/assign-staff', async (req, res) => {
 });
 
 // PUT - Update incident status (for staff use)
-router.put('/:id/update-status', async (req, res) => {
+router.put('/:id/update-status', authenticateStaff, async (req, res) => {
   try {
     const { id } = req.params;
     const { status, notes } = req.body;
@@ -682,11 +1051,26 @@ router.put('/:id/update-status', async (req, res) => {
       [status, id]
     );
 
-    // If notes provided, you might want to add them to a notes/activity log table
-    if (notes && notes.trim()) {
-      // For now, we'll just log the notes
-      console.log('📝 Update notes:', notes);
-      // TODO: Add notes to activity log or notes table
+    // Log status update activity (only if status actually changed)
+    if (incident.status !== status) {
+      try {
+        const { created_by } = req.body;
+        const finalCreatedBy = created_by !== null && created_by !== undefined
+          ? created_by
+          : (req.staff?.id || req.admin?.admin_id || req.user?.id || null);
+
+        console.log('Final created_by value to be inserted:', finalCreatedBy);
+
+        const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip || 'unknown';
+
+        await pool.execute(`
+          INSERT INTO activity_logs (admin_id, action, details, ip_address, created_at)
+          VALUES (?, 'incident_status_update', ?, ?, NOW())
+        `, [finalCreatedBy, `Incident #${id} status changed from "${incident.status}" to "${status}"${notes ? `: ${notes}` : ''}`, clientIP]);
+        console.log('✅ Activity logged: incident_status_update');
+      } catch (logError) {
+        console.error('❌ Failed to log status update activity:', logError.message);
+      }
     }
 
     console.log('✅ Incident status updated successfully');
@@ -737,11 +1121,12 @@ router.get('/user/:userId', async (req, res) => {
 
     // Get incidents reported by this user
     const [incidents] = await pool.execute(`
-      SELECT 
+      SELECT
         ir.*,
         t.name as assigned_team_name,
         s.name as assigned_staff_name,
-        CONCAT(gu.first_name, ' ', gu.last_name) as reporter_name
+        CONCAT(gu.first_name, ' ', gu.last_name) as reporter_name,
+        gu.phone as reporter_phone
       FROM incident_reports ir
       LEFT JOIN teams t ON ir.assigned_team_id = t.id
       LEFT JOIN staff s ON ir.assigned_staff_id = s.id
@@ -800,12 +1185,13 @@ router.get('/staff/:staffId', async (req, res) => {
 
     // Get incidents assigned to this staff member individually OR to their team
     const [incidents] = await pool.execute(`
-      SELECT 
+      SELECT
         ir.*,
         t.name as assigned_team_name,
         s.name as assigned_staff_name,
         CONCAT(gu.first_name, ' ', gu.last_name) as reporter_name,
-        CASE 
+        gu.phone as reporter_phone,
+        CASE
           WHEN ir.assigned_staff_id = ? THEN 'individual'
           WHEN ir.assigned_team_id = ? THEN 'team'
           ELSE 'unknown'

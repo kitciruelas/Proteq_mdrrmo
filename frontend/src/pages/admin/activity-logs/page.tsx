@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { activityLogsApi } from '../../../utils/api';
+import ExportPreviewModal from '../../../components/base/ExportPreviewModal';
+import type { ExportColumn } from '../../../utils/exportUtils';
+import ExportUtils from '../../../utils/exportUtils';
 
 interface ActivityLog {
   id: number;
@@ -9,7 +12,7 @@ interface ActivityLog {
   details: string;
   ip_address?: string;
   created_at: string;
-  admin_id?: number;
+  admin_id?: number; 
   staff_id?: number;
   general_user_id?: number;
 }
@@ -34,6 +37,29 @@ interface ActivityLogStats {
   recentHighImpact: ActivityLog[];
 }
 
+// Export columns configuration
+const exportColumns: ExportColumn[] = [
+  { key: 'id', label: 'ID' },
+  {
+    key: 'user_type',
+    label: 'User Type',
+    format: (value: string) => value.charAt(0).toUpperCase() + value.slice(1)
+  },
+  { key: 'user_name', label: 'User Name' },
+  {
+    key: 'action',
+    label: 'Action',
+    format: (value: string) => value.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+  },
+  { key: 'details', label: 'Details' },
+  { key: 'ip_address', label: 'IP Address' },
+  {
+    key: 'created_at',
+    label: 'Date & Time',
+    format: (value: string) => new Date(value).toLocaleString()
+  }
+];
+
 const ActivityLogs: React.FC = () => {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +73,7 @@ const ActivityLogs: React.FC = () => {
   const [totalLogs, setTotalLogs] = useState(0);
   const [stats, setStats] = useState<ActivityLogStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showExportPreview, setShowExportPreview] = useState(false);
 
   useEffect(() => {
     fetchActivityLogs();
@@ -150,17 +177,40 @@ const ActivityLogs: React.FC = () => {
     fetchActivityStats();
   };
 
-  const handleExport = async () => {
-    try {
-      // This would typically call an export endpoint
-      alert('Export functionality would be implemented here');
-    } catch (error) {
-      console.error('Error exporting logs:', error);
-    }
-  };
+  // Export functionality is now handled by ExportButton component
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
+  };
+
+  // Confirm export to PDF after preview
+  const handleConfirmExportPDF = async () => {
+    const exportData = filteredLogs.map(log => ({ ...log }));
+    // Build dynamic title based on filters
+    let title = 'Activity Logs';
+    const filterParts = [];
+    if (userTypeFilter !== 'all') filterParts.push(`User Type: ${userTypeFilter.charAt(0).toUpperCase() + userTypeFilter.slice(1)}`);
+    if (actionFilter !== 'all') filterParts.push(`Action: ${actionFilter.charAt(0).toUpperCase() + actionFilter.slice(1)}`);
+    if (dateFilter !== 'all') {
+      let dateLabel = '';
+      if (dateFilter === 'today') dateLabel = 'Today';
+      else if (dateFilter === 'week') dateLabel = 'Last Week';
+      else if (dateFilter === 'month') dateLabel = 'Last Month';
+      filterParts.push(`Date: ${dateLabel}`);
+    }
+    if (searchTerm.trim()) filterParts.push(`Search: "${searchTerm.trim()}"`);
+    if (filterParts.length > 0) {
+      title += ' (' + filterParts.join(', ') + ')';
+    } else {
+      title += ' Export';
+    }
+    const options = {
+      filename: 'activity-logs',
+      title,
+      includeTimestamp: true
+    };
+    await ExportUtils.exportToPDF(exportData, exportColumns, options);
+    setShowExportPreview(false);
   };
 
   const filteredLogs = logs.filter(log => {
@@ -208,14 +258,20 @@ const ActivityLogs: React.FC = () => {
           <p className="text-gray-600 mt-1">Monitor system activities and user actions</p>
         </div>
         <div className="flex items-center space-x-3">
-          <button 
-            onClick={handleExport}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          <button
+            onClick={() => setShowExportPreview(true)}
+            disabled={filteredLogs.length === 0}
+            className={`px-4 py-2 rounded-lg transition-colors flex items-center ${
+              filteredLogs.length === 0
+                ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                : 'bg-green-600 text-white hover:bg-green-700'
+            }`}
+            title={filteredLogs.length === 0 ? 'No data to export' : 'Export activity logs'}
           >
             <i className="ri-download-line mr-2"></i>
-            Export Logs
+            Export ({filteredLogs.length})
           </button>
-          <button 
+          <button
             onClick={handleRefresh}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
@@ -440,6 +496,15 @@ const ActivityLogs: React.FC = () => {
           <p className="text-gray-600">Try adjusting your filters to see more results.</p>
         </div>
       )}
+
+      {/* Export Preview Modal */}
+      <ExportPreviewModal
+        open={showExportPreview}
+        onClose={() => setShowExportPreview(false)}
+        onExport={handleConfirmExportPDF}
+        staff={filteredLogs}
+        columns={exportColumns.map(col => ({ key: col.key, label: col.label }))}
+      />
     </div>
   );
 };

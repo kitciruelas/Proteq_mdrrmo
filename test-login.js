@@ -61,8 +61,8 @@ async function testLogin() {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                email: 'kit@gmail.com',
-                password: 'kit123' // Common password - we'll try this
+                email: '22-33950@g.batstate-u.edu.ph',
+                password: 'staff123' // Updated password
             })
         });
         

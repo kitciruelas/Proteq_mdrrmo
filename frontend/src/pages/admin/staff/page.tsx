@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import ExportUtils from '../../../utils/exportUtils';
+import ExportPreviewModal from '../../../components/base/ExportPreviewModal';
+import type { ExportColumn } from '../../../utils/exportUtils';
 import { useToast } from '../../../components/base/Toast';
+import { staffManagementApi } from '../../../utils/api';
 
 interface Staff {
   id: number;
@@ -40,6 +44,7 @@ const StaffManagement: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalStaff, setTotalStaff] = useState(0);
   const { showToast } = useToast();
+  const [showExportPreview, setShowExportPreview] = useState(false);
 
   useEffect(() => {
     fetchStaff();
@@ -105,6 +110,7 @@ const StaffManagement: React.FC = () => {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('userInfo') ? JSON.parse(localStorage.getItem('userInfo')!).token : ''}`
         },
         body: JSON.stringify({ status: newStatus }),
       });
@@ -132,9 +138,7 @@ const StaffManagement: React.FC = () => {
     phone: '',
     position: '',
     department: '',
-    team_id: '',
-    password: '',
-    confirmPassword: ''
+    team_id: ''
   });
 
   const handleAddStaff = () => {
@@ -145,9 +149,7 @@ const StaffManagement: React.FC = () => {
       phone: '',
       position: '',
       department: '',
-      team_id: '',
-      password: '',
-      confirmPassword: ''
+      team_id: ''
     });
     setIsEditing(true);
     setShowStaffModal(true);
@@ -161,9 +163,7 @@ const StaffManagement: React.FC = () => {
       phone: staffMember.phone,
       position: staffMember.position,
       department: staffMember.department,
-      team_id: staffMember.team_id?.toString() || '',
-      password: '',
-      confirmPassword: ''
+      team_id: staffMember.team_id?.toString() || ''
     });
     setIsEditing(true);
     setShowStaffModal(true);
@@ -171,17 +171,6 @@ const StaffManagement: React.FC = () => {
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Password validation for new staff
-    if (!selectedStaff && (!formData.password || formData.password.length < 6)) {
-      showToast({ type: 'error', message: 'Password must be at least 6 characters long' });
-      return;
-    }
-    
-    if (!selectedStaff && formData.password !== formData.confirmPassword) {
-      showToast({ type: 'error', message: 'Passwords do not match' });
-      return;
-    }
     
     try {
       const url = selectedStaff 
@@ -196,18 +185,13 @@ const StaffManagement: React.FC = () => {
         team_id: formData.team_id === '' ? null : parseInt(formData.team_id)
       };
       
-      // Only include password if it's a new staff member or if password was changed
-      if (selectedStaff) {
-        delete requestData.password;
-        delete requestData.confirmPassword;
-      }
-      
       console.log('Sending staff data:', requestData);
       
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('userInfo') ? JSON.parse(localStorage.getItem('userInfo')!).token : ''}`
         },
         body: JSON.stringify(requestData),
       });
@@ -217,7 +201,7 @@ const StaffManagement: React.FC = () => {
       if (data.success) {
         setShowStaffModal(false);
         fetchStaff(); // Refresh the staff list
-        showToast({ type: 'success', message: selectedStaff ? 'Staff updated successfully' : 'Staff added successfully' });
+        showToast({ type: 'success', message: selectedStaff ? 'Staff updated successfully' : 'Staff added successfully. Login credentials have been sent via email.' });
       } else {
         console.error('Failed to save staff:', data.message);
         showToast({ type: 'error', message: 'Failed to save staff' });
@@ -246,6 +230,7 @@ const StaffManagement: React.FC = () => {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('userInfo') ? JSON.parse(localStorage.getItem('userInfo')!).token : ''}`
         },
         body: JSON.stringify({
           ...selectedStaff,
@@ -378,40 +363,7 @@ const StaffManagement: React.FC = () => {
         </div>
       </div>
       
-      {!selectedStaff && (
-        <>
-          <div className="border-t border-gray-200 pt-4 mt-4">
-            <h4 className="text-sm font-medium text-gray-700 mb-4">Account Security</h4>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-              <input
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Enter password (min 6 characters)"
-                required
-              />
-              <p className="text-xs text-gray-500 mt-1">Minimum 6 characters</p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password</label>
-              <input
-                type="password"
-                name="confirmPassword"
-                value={formData.confirmPassword}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Confirm password"
-                required
-              />
-            </div>
-          </div>
-        </>
-      )}
+
     </>
   );
 
@@ -460,8 +412,71 @@ const StaffManagement: React.FC = () => {
     );
   }
 
+  // Export columns definition
+  const exportColumns: ExportColumn[] = [
+    { key: 'name', label: 'Name' },
+    { key: 'email', label: 'Email' },
+    { key: 'phone', label: 'Phone' },
+    { key: 'position', label: 'Position' },
+    { key: 'department', label: 'Department' },
+    { key: 'team_name', label: 'Team' },
+  ];
+
+  // Export handler
+  const handleExport = async (type: 'csv' | 'pdf' | 'excel' | 'json') => {
+    const exportData = filteredStaff.map(s => ({ ...s }));
+    const options = {
+      filename: 'Staff_Export',
+      title: 'Staff List',
+      logoUrl: '/images/partners/MDRRMO.png',
+      includeTimestamp: true,
+    };
+    switch (type) {
+      case 'csv':
+        ExportUtils.exportToCSV(exportData, exportColumns, options);
+        break;
+      case 'pdf':
+        setShowExportPreview(true);
+        break;
+      case 'excel':
+        ExportUtils.exportToExcel(exportData, exportColumns, options);
+        break;
+      case 'json':
+        ExportUtils.exportToJSON(exportData, options);
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Confirm export to PDF after preview
+  const handleConfirmExportPDF = async () => {
+    const exportData = filteredStaff.map(s => ({ ...s }));
+    // Build dynamic title based on filters
+    let title = 'Staff List';
+    const filterParts = [];
+    if (searchTerm.trim()) filterParts.push(`Search: "${searchTerm.trim()}"`);
+    if (statusFilter !== 'all') filterParts.push(`Status: ${statusFilter.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}`);
+    if (roleFilter !== 'all') filterParts.push(`Role: ${roleFilter.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}`);
+    if (teamFilter !== 'all') {
+      const teamObj = teams.find(t => t.id.toString() === teamFilter);
+      filterParts.push(`Team: ${teamObj ? teamObj.name : teamFilter}`);
+    }
+    if (filterParts.length > 0) {
+      title += ' (' + filterParts.join(', ') + ')';
+    }
+    const options = {
+      filename: 'Staff_Export',
+      title,
+      logoUrl: '/images/partners/MDRRMO.png',
+      includeTimestamp: true,
+    };
+    await ExportUtils.exportToPDF(exportData, exportColumns, options);
+    setShowExportPreview(false);
+  };
+
   return (
-    <div className="space-y-6">
+  <div className="space-y-6">
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -476,10 +491,21 @@ const StaffManagement: React.FC = () => {
             <i className="ri-user-add-line mr-2"></i>
             Add Staff
           </button>
-          <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-            <i className="ri-download-line mr-2"></i>
-            Export Staff
-          </button>
+          <div className="relative inline-block">
+            <button
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              title="Export Staff"
+              onClick={() => handleExport('pdf')}
+            >
+              <i className="ri-download-line mr-2"></i>
+              Export Staff
+            </button>
+            <div className="absolute right-0 mt-2 w-40 bg-white border border-gray-200 rounded shadow-lg z-10 hidden group-hover:block">
+              <button className="block w-full text-left px-4 py-2 hover:bg-gray-100" onClick={() => handleExport('csv')}>Export as CSV</button>
+              <button className="block w-full text-left px-4 py-2 hover:bg-gray-100" onClick={() => handleExport('excel')}>Export as Excel</button>
+              <button className="block w-full text-left px-4 py-2 hover:bg-gray-100" onClick={() => handleExport('json')}>Export as JSON</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -718,6 +744,14 @@ const StaffManagement: React.FC = () => {
       )}
 
       {/* Team Assignment Modal */}
+      {/* Export Preview Modal */}
+      <ExportPreviewModal
+        open={showExportPreview}
+        onClose={() => setShowExportPreview(false)}
+        onExport={handleConfirmExportPDF}
+        staff={filteredStaff}
+        columns={exportColumns}
+      />
       {showTeamAssignmentModal && selectedStaff && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">

@@ -115,7 +115,7 @@ router.post('/', authenticateAdmin, async (req, res) => {
       title,
       type,
       created_by_from_body: created_by,
-      admin_id_from_request: req.admin?.id
+      admin_id_from_request: req.admin?.admin_id
     });
 
     if (!title || !description || !type) {
@@ -128,10 +128,10 @@ router.post('/', authenticateAdmin, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid type value' });
     }
 
-    // Use created_by from request body, or fallback to req.admin.id, or default to null
-    const finalCreatedBy = created_by !== null && created_by !== undefined 
-      ? created_by 
-      : (req.admin?.id || null);
+    // Use created_by from request body, or fallback to req.admin.admin_id, or default to null
+    const finalCreatedBy = created_by !== null && created_by !== undefined
+      ? created_by
+      : (req.admin?.admin_id || null);
 
     console.log('Final created_by value to be inserted:', finalCreatedBy);
 
@@ -143,10 +143,21 @@ router.post('/', authenticateAdmin, async (req, res) => {
 
     // Log the protocol creation
     try {
-      await pool.execute(`
-        INSERT INTO activity_logs (admin_id, action, details, created_at)
-        VALUES (?, 'safety_protocol_create', ?, NOW())
-      `, [req.admin?.id || 1, `Created safety protocol: ${title} (ID: ${result.insertId})`]);
+      const { created_by } = req.body;
+      const finalCreatedBy = created_by !== null && created_by !== undefined
+        ? created_by
+        : (req.admin?.admin_id || null);
+
+      console.log('Final created_by value to be inserted:', finalCreatedBy);
+
+      if (finalCreatedBy) {
+        await pool.execute(`
+          INSERT INTO activity_logs (admin_id, action, details, created_at)
+          VALUES (?, 'safety_protocol_create', ?, NOW())
+        `, [finalCreatedBy, `Created safety protocol: ${title} (ID: ${result.insertId})`]);
+      } else {
+        console.warn('Admin ID not found for logging safety protocol creation');
+      }
     } catch (logError) {
       console.warn('Failed to log safety protocol creation activity:', logError.message);
     }
@@ -190,10 +201,14 @@ router.put('/:id', authenticateAdmin, async (req, res) => {
 
     // Log the protocol update
     try {
-      await pool.execute(`
-        INSERT INTO activity_logs (admin_id, action, details, created_at)
-        VALUES (?, 'safety_protocol_update', ?, NOW())
-      `, [req.admin?.id || 1, `Updated safety protocol (ID: ${id})`]);
+      if (req.admin?.admin_id) {
+        await pool.execute(`
+          INSERT INTO activity_logs (admin_id, action, details, created_at)
+          VALUES (?, 'safety_protocol_update', ?, NOW())
+        `, [req.admin.admin_id, `Updated safety protocol (ID: ${id})`]);
+      } else {
+        console.warn('Admin ID not found for logging safety protocol update');
+      }
     } catch (logError) {
       console.warn('Failed to log safety protocol update activity:', logError.message);
     }
@@ -224,10 +239,14 @@ router.delete('/:id', authenticateAdmin, async (req, res) => {
     // Log the protocol deletion
     try {
       const protocolTitle = existingProtocols[0]?.title || `ID: ${id}`;
-      await pool.execute(`
-        INSERT INTO activity_logs (admin_id, action, details, created_at)
-        VALUES (?, 'safety_protocol_delete', ?, NOW())
-      `, [req.admin?.id || 1, `Deleted safety protocol: ${protocolTitle} (ID: ${id})`]);
+      if (req.admin?.admin_id) {
+        await pool.execute(`
+          INSERT INTO activity_logs (admin_id, action, details, created_at)
+          VALUES (?, 'safety_protocol_delete', ?, NOW())
+        `, [req.admin.admin_id, `Deleted safety protocol: ${protocolTitle} (ID: ${id})`]);
+      } else {
+        console.warn('Admin ID not found for logging safety protocol deletion');
+      }
     } catch (logError) {
       console.warn('Failed to log safety protocol deletion activity:', logError.message);
     }

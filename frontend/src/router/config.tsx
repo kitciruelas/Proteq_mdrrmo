@@ -21,16 +21,19 @@ import AdminDashboard from "../pages/admin/dashboard/page";
 import AlertsManagement from "../pages/admin/alerts/page";
 import UserManagement from "../pages/admin/users/page";
 import StaffManagement from "../pages/admin/staff/page";
-import ViewIncidents from "../pages/admin/incidents/view/page";   
+import ViewIncidents from "../pages/admin/incidents/view/page";
+import ViewIncidentDetails from "../pages/admin/incidents/view/[id]/page";
 import Reports from "../pages/admin/reports/Reports";
 import EvacuationCentersManagement from "../pages/admin/evacuation/centers/page";
 import EvacuationRoutesManagement from "../pages/admin/evacuation/routes/page";
 import EvacuationResourcesManagement from "../pages/admin/evacuation/resources/page";
 import SafetyProtocolsManagement from "../pages/admin/safety-protocols/page";
 import ActivityLogs from "../pages/admin/activity-logs/page";
+import AdminProfilePage from "../pages/admin/profile/page";
 import TeamsManagement from "../pages/admin/teams/page";
 import StaffDashboard from "../pages/staff/dashboard/page";
 import StaffIncidentsPage from "../pages/staff/incidents/page";
+import StaffIncidentDetails from "../pages/staff/incidents/[id]/page";
 import StaffLayout from "../components/StaffLayout";
 
 
@@ -118,6 +121,10 @@ const routes: RouteObject[] = [
         element: <ViewIncidents />,
       },
       {
+        path: "incidents/view/:id",
+        element: <ViewIncidentDetails />,
+      },
+      {
         path: "evacuation/centers",
         element: <EvacuationCentersManagement />,
       },
@@ -140,6 +147,10 @@ const routes: RouteObject[] = [
       {
         path: "reports",
         element: <Reports />,
+      },
+      {
+        path: "profile",
+        element: <AdminProfilePage />,
       },
       // Redirect /admin to /admin/dashboard
       {
@@ -164,6 +175,10 @@ const routes: RouteObject[] = [
       {
         path: "incidents",
         element: <StaffIncidentsPage />,
+      },
+      {
+        path: "incidents/:id",
+        element: <StaffIncidentDetails />,
       },
     ],
   },

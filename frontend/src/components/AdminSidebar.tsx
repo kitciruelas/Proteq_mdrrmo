@@ -46,12 +46,15 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ collapsed = false, onToggle
           icon: 'ri-building-2-line',
           path: '/admin/evacuation/centers'
         },
-        {
-          id: 'evacuation-routes',
-          label: 'Evacuation Routes',
-          icon: 'ri-route-line',
-          path: '/admin/evacuation/routes'
-        },
+   /*
+{
+  id: 'evacuation-routes',
+  label: 'Evacuation Routes',
+  icon: 'ri-route-line',
+  path: '/admin/evacuation/routes'
+},
+*/
+
         {
           id: 'evacuation-resources',
           label: 'Evacuation Resources',
@@ -231,14 +234,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ collapsed = false, onToggle
               <p className="text-sm text-gray-500">ProteQ Emergency</p>
             </div>
           )}
-          <button
-            onClick={() => onToggleCollapse && onToggleCollapse()}
-            className={`ml-auto text-gray-500 hover:text-gray-700 ${isCollapsed ? 'w-10 h-10 flex items-center justify-center' : ''}`}
-            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={isCollapsed ? 'Expand' : 'Collapse'}
-          >
-            <i className={`ri-${isCollapsed ? 'menu-unfold' : 'menu-fold'}-line`}></i>
-          </button>
+         
         </div>
       </div>
 

@@ -1,7 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { userManagementApi } from '../../../utils/api';
 import Modal, { ConfirmModal } from '../../../components/base/Modal';
 import { useToast } from '../../../components/base/Toast';
+import ExportButton from '../../../components/base/ExportButton';
+import ExportPreviewModal from '../../../components/base/ExportPreviewModal';
+import ExportUtils, { type ExportColumn } from '../../../utils/exportUtils';
+import { getAuthState } from '../../../utils/auth';
 
 interface User {
   user_id: number;
@@ -52,11 +56,50 @@ const UserManagement: React.FC = () => {
   const { showToast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [userIdToDelete, setUserIdToDelete] = useState<number | null>(null);
+  const [allUsersForExport, setAllUsersForExport] = useState<User[]>([]);
+  const [showExportPreview, setShowExportPreview] = useState(false);
+
+  // Define export columns
+  const exportColumns: ExportColumn[] = [
+    { key: 'name', label: 'Full Name' },
+    { key: 'email', label: 'Email' },
+    { key: 'user_type', label: 'User Type', format: (value) => value ? value.charAt(0).toUpperCase() + value.slice(1).toLowerCase() : '' },
+    { key: 'phone', label: 'Phone' },
+    {
+      key: 'address',
+      label: 'Address',
+      format: (value: any, row: any) => {
+        const parts = [];
+        if (value) parts.push(value);
+        if (row.city) parts.push(row.city);
+        if (row.state) parts.push(row.state);
+        return parts.join(', ') || '';
+      }
+    },
+  ];
 
   useEffect(() => {
     fetchUsers();
-  }, [currentPage, searchTerm, statusFilter, userTypeFilter]);
+    fetchAllUsersForExportData();
+  }, [statusFilter, userTypeFilter]);
 
+  // Fetch all users for export
+  const fetchAllUsersForExportData = async () => {
+    try {
+      const allUsers = await fetchAllUsersForExport();
+      setAllUsersForExport(allUsers);
+    } catch (error) {
+      console.error('Error fetching all users for export:', error);
+      // Fallback to current users if fetch fails
+      setAllUsersForExport(users);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, [currentPage]);
+
+  // Remove filtering in fetchUsers, just set users from API response
   const fetchUsers = async () => {
     try {
       setLoading(true);
@@ -65,7 +108,6 @@ const UserManagement: React.FC = () => {
       const params = {
         page: currentPage,
         limit: 10,
-        search: searchTerm,
         status: statusFilter,
         barangay: userTypeFilter // Using barangay param for user_type filter
       };
@@ -87,9 +129,36 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  // Fetch all users for export (without pagination)
+  const fetchAllUsersForExport = async (): Promise<User[]> => {
+    try {
+      const params = {
+        page: 1,
+        limit: 1000, // Large limit to get all users
+        status: statusFilter,
+        barangay: userTypeFilter
+      };
+
+      const response = await userManagementApi.getUsers(params) as ApiResponse;
+
+      if (response.success && response.data) {
+        return response.data.users;
+      } else {
+        throw new Error(response.message || 'Failed to fetch users for export');
+      }
+    } catch (error) {
+      console.error('Error fetching users for export:', error);
+      throw error;
+    }
+  };
+
   const handleStatusChange = async (userId: number, newStatus: number) => {
     try {
-      await userManagementApi.updateUserStatus(userId, newStatus === 1 ? 'active' : 'inactive');
+      // Get current admin id from auth state
+      const authState = getAuthState();
+      const adminId = authState.userData?.admin_id;
+
+      await userManagementApi.updateUserStatus(userId, newStatus, adminId);
 
       // Update local state
       setUsers(prev => prev.map(user =>
@@ -124,6 +193,42 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  const handleExportPreview = () => {
+    setShowExportPreview(true);
+  };
+
+  const handleExportConfirm = async () => {
+    try {
+      // Build dynamic export title based on filters
+      let filterTitle = 'Users Data Export';
+      const filterParts = [];
+      if (searchTerm) filterParts.push(`Search: "${searchTerm}"`);
+      if (statusFilter && statusFilter !== 'all') filterParts.push(`Status: ${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}`);
+      if (userTypeFilter && userTypeFilter !== 'all') filterParts.push(`Type: ${userTypeFilter.charAt(0).toUpperCase() + userTypeFilter.slice(1)}`);
+      if (filterParts.length) filterTitle += ` (${filterParts.join(', ')})`;
+
+      await ExportUtils.exportToPDF(
+        allUsersForExport,
+        exportColumns,
+        {
+          filename: 'users_export',
+          title: filterTitle,
+          includeTimestamp: true,
+          logoUrl: '/images/partners/MDRRMO.png'
+        }
+      );
+      showToast({ type: 'success', message: 'Users data exported successfully' });
+      setShowExportPreview(false);
+    } catch (error) {
+      console.error('Export error:', error);
+      showToast({ type: 'error', message: 'Failed to export users data' });
+    }
+  };
+
+  const handleExportCancel = () => {
+    setShowExportPreview(false);
+  };
+
   const getStatusColor = (status: number) => {
     if (status === 1) return 'bg-green-100 text-green-800';
     if (status === 0) return 'bg-gray-100 text-gray-800';
@@ -137,6 +242,18 @@ const UserManagement: React.FC = () => {
     if (status === -1) return 'Suspended';
     return 'Unknown';
   };
+
+  // Filter users from allUsersForExport based on searchTerm and filters
+  const filteredUsers = allUsersForExport.filter(user => {
+    const lowerSearch = searchTerm.toLowerCase();
+    if (searchTerm.trim() === '') return true;
+    return (
+      user.first_name.toLowerCase().includes(lowerSearch) ||
+      user.last_name.toLowerCase().includes(lowerSearch) ||
+      user.email.toLowerCase().includes(lowerSearch) ||
+      user.name.toLowerCase().includes(lowerSearch)
+    );
+  });
 
   if (loading) {
     return (
@@ -155,9 +272,13 @@ const UserManagement: React.FC = () => {
           <p className="text-gray-600 mt-1">Manage registered users and their access</p>
         </div>
         <div className="flex items-center space-x-3">
-          <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
-            <i className="ri-download-line mr-2"></i>
-            Export Users
+          <button
+            onClick={handleExportPreview}
+            disabled={loading || allUsersForExport.length === 0}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <i className="ri-file-pdf-line mr-2"></i>
+            Export Users ({allUsersForExport.length})
           </button>
         </div>
       </div>
@@ -187,7 +308,7 @@ const UserManagement: React.FC = () => {
             </div>
             <div>
               <p className="text-sm text-gray-600">Total Users</p>
-              <p className="text-xl font-bold text-gray-900">{users.length}</p>
+              <p className="text-xl font-bold text-gray-900">{totalUsers}</p>
             </div>
           </div>
         </div>
@@ -199,7 +320,7 @@ const UserManagement: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600">Active Users</p>
               <p className="text-xl font-bold text-gray-900">
-                {users.filter(u => u.status === 1).length}
+                {filteredUsers.filter(u => u.status === 1).length}
               </p>
             </div>
           </div>
@@ -212,7 +333,7 @@ const UserManagement: React.FC = () => {
             <div>
               <p className="text-sm text-gray-600">Inactive Users</p>
               <p className="text-xl font-bold text-gray-900">
-                {users.filter(u => u.status === 0 || u.status === -1).length}
+                {filteredUsers.filter(u => u.status === 0 || u.status === -1).length}
               </p>
             </div>
           </div>
@@ -244,7 +365,7 @@ const UserManagement: React.FC = () => {
             </select>
           </div>
           <div className="text-sm text-gray-600">
-            Showing {users.length} of {totalUsers} users
+            Showing {filteredUsers.length} of {totalUsers} users
           </div>
         </div>
       </div>
@@ -276,7 +397,7 @@ const UserManagement: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {users.map((user) => (
+              {filteredUsers.map((user) => (
                 <tr key={user.user_id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
@@ -454,8 +575,6 @@ const UserManagement: React.FC = () => {
                     <p className="text-sm font-medium text-gray-900">{selectedUser.phone || 'Not provided'}</p>
                   </div>
                 </div>
-
-              
               </div>
             </div>
 
@@ -496,11 +615,27 @@ const UserManagement: React.FC = () => {
                 </div>
               </div>
             )}
-
-            
           </div>
         </Modal>
       )}
+
+      {/* Export Preview Modal */}
+      <ExportPreviewModal
+        open={showExportPreview}
+        onClose={handleExportCancel}
+        onExport={handleExportConfirm}
+        staff={allUsersForExport}
+        columns={exportColumns}
+        title={(() => {
+          let filterTitle = 'Users Data Export';
+          const filterParts = [];
+          if (searchTerm) filterParts.push(`Search: "${searchTerm}"`);
+          if (statusFilter && statusFilter !== 'all') filterParts.push(`Status: ${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}`);
+          if (userTypeFilter && userTypeFilter !== 'all') filterParts.push(`Type: ${userTypeFilter.charAt(0).toUpperCase() + userTypeFilter.slice(1)}`);
+          if (filterParts.length) filterTitle += ` (${filterParts.join(', ')})`;
+          return filterTitle;
+        })()}
+      />
       <ConfirmModal
         isOpen={showDeleteConfirm}
         onClose={() => { setShowDeleteConfirm(false); setUserIdToDelete(null); }}

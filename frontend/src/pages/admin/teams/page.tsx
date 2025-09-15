@@ -40,7 +40,7 @@ const TeamsManagement: React.FC = () => {
 
   useEffect(() => {
     fetchTeams();
-  }, [currentPage, searchTerm]);
+  }, [currentPage]);
 
   const fetchTeams = async () => {
     try {
@@ -49,7 +49,6 @@ const TeamsManagement: React.FC = () => {
       
       const params = new URLSearchParams({
         page: currentPage.toString(),
-        search: searchTerm,
       });
 
       console.log('Fetching teams with params:', params.toString());

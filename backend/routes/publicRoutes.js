@@ -35,11 +35,11 @@ router.get('/alerts/public', async (req, res) => {
 
         const [alerts] = await pool.execute(`
             SELECT
-                alert_id,
+                id as alert_id,
                 title,
-                message,
+                description as message,
                 alert_type,
-                severity,
+                alert_severity as severity,
                 status,
                 created_at
             FROM alerts
@@ -93,7 +93,7 @@ router.get('/stats', async (req, res) => {
         );
 
         const [evacuationCenters] = await pool.execute(
-            'SELECT COUNT(*) as total_centers FROM evacuation_centers WHERE status = "active"'
+            'SELECT COUNT(*) as total_centers FROM evacuation_centers WHERE status IN ("open", "full")'
         );
 
         const [activeAlerts] = await pool.execute(

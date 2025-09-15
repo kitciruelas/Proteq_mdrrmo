@@ -116,6 +116,7 @@ CREATE TABLE `incident_reports` (
   `validation_notes` text DEFAULT NULL,
   `priority_level` enum('low','moderate','high','critical') NOT NULL DEFAULT 'moderate',
   `reporter_safe_status` enum('safe','injured','unknown') NOT NULL DEFAULT 'unknown',
+  `attachment` varchar(255) DEFAULT NULL,
   `created_at` datetime DEFAULT current_timestamp(),
   `updated_at` datetime DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

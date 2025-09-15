@@ -424,10 +424,7 @@ const AlertsManagement: React.FC = () => {
                         Sent: {new Date(alert.sent_at).toLocaleString()}
                       </span>
                     )}
-                    <span>
-                      <i className="ri-group-line mr-1"></i>
-                      Recipients: {Array.isArray(alert.recipients) ? alert.recipients.join(', ') : 'None'}
-                    </span>
+                
                     <span>
                       <i className="ri-flag-line mr-1"></i>
                       Priority: {alert.priority || 'medium'}
@@ -472,7 +469,7 @@ const AlertsManagement: React.FC = () => {
                     className="px-3 py-1 bg-red-100 text-red-700 text-sm rounded-lg hover:bg-red-200 transition-colors"
                   >
                     <i className="ri-delete-bin-line mr-1"></i>
-                    Delete
+                  
                   </button>
                 </div>
               </div>

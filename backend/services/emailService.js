@@ -1,24 +1,77 @@
 const nodemailer = require('nodemailer');
 const pool = require('../config/conn');
 
-// Create transporter
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: process.env.SMTP_PORT || 587,
-    secure: false, // true for 465, false for other ports
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
-    }
-});
+// Function to create transporter with current config
+const createTransporter = () => {
+    const smtpHost = process.env.SMTP_HOST || process.env.EMAIL_HOST || 'smtp.gmail.com';
+    const smtpUser = process.env.EMAIL_USER || process.env.SMTP_USER;
+    const smtpPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+    const smtpPort = process.env.SMTP_PORT || process.env.EMAIL_PORT || 587;
+
+    console.log('📧 Creating transporter with config:', {
+        host: smtpHost,
+        port: smtpPort,
+        user: smtpUser ? '***configured***' : 'MISSING',
+        pass: smtpPass ? '***configured***' : 'MISSING'
+    });
+
+    return nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: false, // true for 465, false for other ports
+        auth: {
+            user: smtpUser,
+            pass: smtpPass
+        },
+        tls: {
+            rejectUnauthorized: false // Allow self-signed certificates in development
+        }
+    });
+};
 
 // Function to send password reset OTP
 const sendPasswordResetOTP = async (email, otp) => {
     try {
+        // Validate SMTP configuration (support both EMAIL_* and SMTP_* variables)
+        const smtpHost = process.env.SMTP_HOST || process.env.EMAIL_HOST || 'smtp.gmail.com';
+        const smtpUser = process.env.EMAIL_USER || process.env.SMTP_USER;
+        const smtpPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+        const smtpPort = process.env.SMTP_PORT || process.env.EMAIL_PORT || 587;
+
+        console.log('🔧 SMTP Configuration Debug:', {
+            'process.env.EMAIL_USER': process.env.EMAIL_USER ? '***set***' : 'NOT SET',
+            'process.env.SMTP_USER': process.env.SMTP_USER ? '***set***' : 'NOT SET',
+            'process.env.EMAIL_PASS': process.env.EMAIL_PASS ? '***set***' : 'NOT SET',
+            'process.env.SMTP_PASS': process.env.SMTP_PASS ? '***set***' : 'NOT SET',
+            'smtpHost': smtpHost,
+            'smtpUser': smtpUser ? '***configured***' : 'MISSING',
+            'smtpPass': smtpPass ? '***configured***' : 'MISSING',
+            'smtpPort': smtpPort
+        });
+
+        // More lenient validation - only require user and pass, host has default
+        if (!smtpUser || !smtpPass) {
+            console.error('❌ SMTP configuration missing required credentials:', {
+                user: smtpUser ? '***set***' : 'MISSING',
+                pass: smtpPass ? '***set***' : 'MISSING',
+                host: smtpHost,
+                port: smtpPort
+            });
+            throw new Error(`SMTP credentials missing. Please set EMAIL_USER and EMAIL_PASS in your .env file. Current: User=${smtpUser ? 'set' : 'missing'}, Pass=${smtpPass ? 'set' : 'missing'}`);
+        }
+
+        console.log('Attempting to send password reset OTP to:', email);
+        console.log('SMTP Configuration:', {
+            host: smtpHost,
+            port: smtpPort,
+            user: smtpUser ? '***configured***' : 'missing',
+            secure: false
+        });
+
         const mailOptions = {
-            from: `"MDRRMO System" <${process.env.SMTP_USER}>`,
+            from: `"${process.env.EMAIL_FROM_NAME || 'ProteQ Emergency Management'}" <${process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER}>`,
             to: email,
-            subject: 'Password Reset OTP - MDRRMO System',
+            subject: 'Password Reset OTP - ProteQ Emergency Management',
             html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                     <h2 style="color: #333;">Password Reset Request</h2>
@@ -35,12 +88,37 @@ const sendPasswordResetOTP = async (email, otp) => {
             `
         };
 
+        const transporter = createTransporter();
         const info = await transporter.sendMail(mailOptions);
-        console.log('Password reset OTP email sent:', info.messageId);
+        console.log('✅ Password reset OTP email sent successfully:', {
+            messageId: info.messageId,
+            email: email,
+            timestamp: new Date().toISOString()
+        });
         return { success: true, messageId: info.messageId };
     } catch (error) {
-        console.error('Error sending password reset OTP email:', error);
-        throw new Error('Failed to send password reset email');
+        console.error('❌ Error sending password reset OTP email:', {
+            email: email,
+            error: error.message,
+            code: error.code,
+            errno: error.errno,
+            syscall: error.syscall,
+            hostname: error.hostname,
+            timestamp: new Date().toISOString()
+        });
+
+        // Provide more specific error messages based on error type
+        if (error.code === 'EAUTH') {
+            throw new Error('SMTP authentication failed. Please check SMTP_USER and SMTP_PASS credentials.');
+        } else if (error.code === 'ECONNREFUSED') {
+            throw new Error('SMTP connection refused. Please check SMTP_HOST and SMTP_PORT settings.');
+        } else if (error.code === 'ENOTFOUND') {
+            throw new Error('SMTP host not found. Please check SMTP_HOST setting.');
+        } else if (error.code === 'ETIMEDOUT') {
+            throw new Error('SMTP connection timed out. Please check network connectivity and SMTP settings.');
+        } else {
+            throw new Error(`Failed to send password reset email: ${error.message}`);
+        }
     }
 };
 
@@ -70,6 +148,9 @@ const sendIncidentAssignmentEmail = async (incidentData, teamId) => {
         // Send email to each team member
         for (const member of teamMembers) {
             try {
+                // Get the frontend URL from environment or default to localhost
+                const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
                 const mailOptions = {
                     from: `"MDRRMO System" <${process.env.SMTP_USER}>`,
                     to: member.email,
@@ -89,13 +170,23 @@ const sendIncidentAssignmentEmail = async (incidentData, teamId) => {
                                 <p><strong>Reported:</strong> ${new Date(incidentData.dateReported).toLocaleString()}</p>
                             </div>
 
-                            <p>Please log into the MDRRMO system to view the full incident details and take appropriate action.</p>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="${frontendUrl}/staff/incidents/${incidentData.id}"
+                           style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                            📋 View Incident Details
+                        </a>
+                    </div>
+
+                            <p style="color: #666; font-size: 14px;">
+                                Click the button above to view the full incident details and take appropriate action.
+                            </p>
 
                             <p>Best regards,<br>MDRRMO System Team</p>
                         </div>
                     `
                 };
 
+                const transporter = createTransporter();
                 await transporter.sendMail(mailOptions);
                 emailsSent++;
                 console.log(`✅ Email sent to ${member.name} (${member.email})`);
@@ -143,6 +234,9 @@ const sendStaffAssignmentEmail = async (incidentData, staffId) => {
         const staffMember = staff[0];
         console.log(`📧 Sending email to ${staffMember.name} (${staffMember.email})`);
 
+        // Get the frontend URL from environment or default to localhost
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
         const mailOptions = {
             from: `"MDRRMO System" <${process.env.SMTP_USER}>`,
             to: staffMember.email,
@@ -162,13 +256,23 @@ const sendStaffAssignmentEmail = async (incidentData, staffId) => {
                         <p><strong>Reported:</strong> ${new Date(incidentData.dateReported).toLocaleString()}</p>
                     </div>
 
-                    <p>Please log into the MDRRMO system to view the full incident details and take appropriate action.</p>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="${frontendUrl}/staff/incidents/${incidentData.id}"
+                           style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                            📋 View Incident Details
+                        </a>
+                    </div>
+
+                    <p style="color: #666; font-size: 14px;">
+                        Click the button above to view the full incident details and take appropriate action.
+                    </p>
 
                     <p>Best regards,<br>MDRRMO System Team</p>
                 </div>
             `
         };
 
+        const transporter = createTransporter();
         await transporter.sendMail(mailOptions);
         console.log(`✅ Email sent to ${staffMember.name} (${staffMember.email})`);
 
@@ -184,8 +288,63 @@ const sendStaffAssignmentEmail = async (incidentData, staffId) => {
     }
 };
 
+// Function to send staff account creation email
+const sendStaffAccountCreationEmail = async (staffData, plainPassword) => {
+    try {
+        console.log('📧 Preparing to send staff account creation email to:', staffData.email);
+
+        const mailOptions = {
+            from: `"${process.env.EMAIL_FROM_NAME || 'ProteQ Emergency Management'}" <${process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_USER}>`,
+            to: staffData.email,
+            subject: 'Welcome to ProteQ - Your Account Has Been Created',
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color: #333;">Welcome to ProteQ Emergency Management System</h2>
+                    <p>Hello ${staffData.name},</p>
+                    <p>Your staff account has been successfully created. You can now access the system using the following credentials:</p>
+
+                    <div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
+                        <h3 style="color: #333; margin-top: 0;">Login Credentials:</h3>
+                        <p><strong>Email:</strong> ${staffData.email}</p>
+                        <p><strong>Password:</strong> ${plainPassword}</p>
+                        <p><strong>Position:</strong> ${staffData.position}</p>
+                        <p><strong>Department:</strong> ${staffData.department}</p>
+                    </div>
+
+                    <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                        <p style="margin: 0; color: #856404;">
+                            <strong>⚠️ Security Notice:</strong> Please change your password after your first login for security purposes.
+                        </p>
+                    </div>
+
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/login"
+                           style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                            🔐 Login to Your Account
+                        </a>
+                    </div>
+
+                    <p>If you have any questions or need assistance, please contact your system administrator.</p>
+
+                    <p>Best regards,<br>MDRRMO System Team</p>
+                </div>
+            `
+        };
+
+        const transporter = createTransporter();
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`✅ Staff account creation email sent to ${staffData.name} (${staffData.email})`);
+        return { success: true, messageId: info.messageId };
+
+    } catch (error) {
+        console.error('❌ Error sending staff account creation email:', error);
+        throw new Error(`Failed to send account creation email: ${error.message}`);
+    }
+};
+
 module.exports = {
     sendPasswordResetOTP,
     sendIncidentAssignmentEmail,
-    sendStaffAssignmentEmail
+    sendStaffAssignmentEmail,
+    sendStaffAccountCreationEmail
 };

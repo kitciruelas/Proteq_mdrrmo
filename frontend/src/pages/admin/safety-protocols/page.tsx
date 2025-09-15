@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { safetyProtocolsApi } from '../../../utils/api';
 import Modal, { ConfirmModal } from '../../../components/base/Modal';
 import { useToast } from '../../../components/base/Toast';
+import ExportPreviewModal from '../../../components/base/ExportPreviewModal';
+import ExportUtils from '../../../utils/exportUtils';
+import type { ExportColumn } from '../../../utils/exportUtils';
+
 
 interface SafetyProtocol {
   id: number;
@@ -9,7 +13,7 @@ interface SafetyProtocol {
   description: string;
   category: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
-  status: 'active' | 'draft' | 'archived';
+  status: 'active' | 'draft' | 'archived'; 
   steps: string[];
   createdAt: string;
   updatedAt: string;
@@ -43,9 +47,39 @@ const SafetyProtocolsManagement: React.FC = () => {
   const [formFileAttachment, setFormFileAttachment] = useState('');
   const [uploading, setUploading] = useState(false);
 
+  // Export modal state
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportData, setExportData] = useState<SafetyProtocol[]>([]);
+  const [exportColumns, setExportColumns] = useState<ExportColumn[]>([]);
+
+    // Dynamic export modal title
+    const getExportTitle = () => {
+      let title = 'Export Safety Protocols';
+      if (categoryFilter !== 'all' || searchTerm.trim() !== '') {
+        title += ' - ';
+        if (categoryFilter !== 'all') title += categoryFilter;
+        if (searchTerm.trim() !== '') title += (categoryFilter !== 'all' ? ' | ' : '') + `Search: "${searchTerm.trim()}"`;
+      }
+      return title;
+    };
+
   useEffect(() => {
     fetchProtocols();
   }, []);
+
+  const openExportModal = () => {
+    // Define columns for export
+    const columns: ExportColumn[] = [
+      { key: 'title', label: 'Title' },
+      { key: 'description', label: 'Description' },
+      { key: 'category', label: 'Category' },
+      { key: 'status', label: 'Status' },
+      { key: 'createdAt', label: 'Created At', format: ExportUtils.formatDateTime },
+    ];
+    setExportColumns(columns);
+    setExportData(filteredProtocols);
+    setShowExportModal(true);
+  };
 
   const toCategory = (typeValue: string): string => {
     const t = (typeValue || '').toLowerCase();
@@ -225,6 +259,18 @@ const SafetyProtocolsManagement: React.FC = () => {
     return 'bg-gray-50 text-gray-600';
   };
 
+  const handleExport = async () => {
+    try {
+      // Use the same dynamic title as the export modal
+      await ExportUtils.exportToPDF(exportData, exportColumns, { filename: 'SafetyProtocols', title: getExportTitle() });
+      setShowExportModal(false);
+      showToast({ type: 'success', message: 'Export successful' });
+    } catch (error) {
+      console.error('Export failed:', error);
+      showToast({ type: 'error', message: 'Export failed' });
+    }
+  };
+
   const filteredProtocols = protocols.filter(protocol => {
     const matchesSearch = protocol.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          protocol.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -259,7 +305,10 @@ const SafetyProtocolsManagement: React.FC = () => {
             <i className="ri-add-line mr-2"></i>
             Add Protocol
           </button>
-          <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+          <button
+            onClick={openExportModal}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          >
             <i className="ri-download-line mr-2"></i>
             Export Protocols
           </button>
@@ -412,7 +461,7 @@ const SafetyProtocolsManagement: React.FC = () => {
                   </div>
                   {selectedProtocol.file_attachment && (
                     <a
-                      href={`http://localhost:5000/uploads/${selectedProtocol.file_attachment}`}
+                      href={`/uploads/${selectedProtocol.file_attachment}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all"
@@ -575,6 +624,15 @@ const SafetyProtocolsManagement: React.FC = () => {
         icon="ri-delete-bin-line"
         iconColor="text-red-600"
       />
+
+      <ExportPreviewModal
+          open={showExportModal}
+          onClose={() => setShowExportModal(false)}
+          onExport={handleExport}
+          staff={exportData}
+          columns={exportColumns}
+          title={getExportTitle()}
+        />
     </div>
   );
 };

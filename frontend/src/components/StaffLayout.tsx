@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, Outlet, useLocation } from 'react-router-dom';
 import { getAuthState, clearAuthData } from '../utils/auth';
+import { staffAuthApi } from '../utils/api';
 import LogoutModal from './LogoutModal';
 
 interface StaffLayoutProps {
@@ -103,11 +104,15 @@ const StaffLayout: React.FC<StaffLayoutProps> = ({ children }) => {
   const handleLogoutConfirm = async () => {
     setIsLoggingOut(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Call the logout API to log the activity
+      await staffAuthApi.logout();
       clearAuthData();
       navigate('/');
     } catch (error) {
       console.error('Logout error:', error);
+      // Even if API call fails, clear local auth data
+      clearAuthData();
+      navigate('/');
     } finally {
       setIsLoggingOut(false);
       setShowLogoutModal(false);

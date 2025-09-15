@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Button from '../../components/base/Button';
 import Input from '../../components/base/Input';
@@ -6,6 +6,8 @@ import useForm from '../../hooks/useForm';
 import useGeolocation from '../../hooks/useGeolocation';
 import Navbar from '../../components/Navbar';
 import { getAuthState, type UserData } from '../../utils/auth';
+import { reverseGeocode } from '../../utils/geocoding';
+import ReCAPTCHA from 'react-google-recaptcha';
 
 
 interface IncidentReportFormData {
@@ -16,6 +18,9 @@ interface IncidentReportFormData {
   longitude: number | null;
   priorityLevel: string;
   safetyStatus: string;
+  guestName: string;
+  guestContact: string;
+  attachments: File[];
 }
 
 export default function IncidentReportPage() {
@@ -31,6 +36,18 @@ export default function IncidentReportPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
   const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
+  const [locationName, setLocationName] = useState('Loading location...');
+
+  // New state for reCAPTCHA and terms checkbox
+  const recaptchaRef = useRef<ReCAPTCHA>(null);
+  const [recaptchaValue, setRecaptchaValue] = useState<string | null>(null);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [termsError, setTermsError] = useState('');
+  const [recaptchaError, setRecaptchaError] = useState('');
+
+  // State for attachments
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [attachmentError, setAttachmentError] = useState('');
 
   // Get user location
   const { latitude, longitude, error: locationError, loading: locationLoading, getCurrentLocation } = useGeolocation();
@@ -56,6 +73,108 @@ export default function IncidentReportPage() {
     };
   }, []);
 
+  // Handle reCAPTCHA change
+  const onRecaptchaChange = (value: string | null) => {
+    setRecaptchaValue(value);
+    if (value) {
+      setRecaptchaError('');
+    }
+  };
+
+  // Handle terms checkbox change
+  const onTermsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setAgreedToTerms(e.target.checked);
+    if (e.target.checked) {
+      setTermsError('');
+    }
+  };
+
+  // Handle file selection
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const maxFiles = 5;
+    const maxSize = 10 * 1024 * 1024; // 10MB per file
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+    if (files.length + selectedFiles.length > maxFiles) {
+      setAttachmentError(`You can only upload up to ${maxFiles} files.`);
+      return;
+    }
+
+    const validFiles: File[] = [];
+    const errors: string[] = [];
+
+    files.forEach(file => {
+      if (!allowedTypes.includes(file.type)) {
+        errors.push(`${file.name}: Invalid file type. Only images are allowed.`);
+      } else if (file.size > maxSize) {
+        errors.push(`${file.name}: File size exceeds 10MB limit.`);
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    if (errors.length > 0) {
+      setAttachmentError(errors.join(' '));
+    } else {
+      setAttachmentError('');
+      setSelectedFiles(prev => [...prev, ...validFiles]);
+      setValue('attachments', [...selectedFiles, ...validFiles]);
+    }
+  };
+
+  // Remove selected file
+  const removeFile = (index: number) => {
+    const newFiles = selectedFiles.filter((_, i) => i !== index);
+    setSelectedFiles(newFiles);
+    setValue('attachments', newFiles);
+    setAttachmentError('');
+  };
+
+  // Get location name on component mount
+  useEffect(() => {
+    const getLocationName = async () => {
+      try {
+        const result = await reverseGeocode(13.8043, 121.2855);
+        if (result.success) {
+          setLocationName(result.locationName);
+        } else {
+          setLocationName('Rosario, Batangas');
+        }
+      } catch (error) {
+        console.error('Failed to get location name:', error);
+        setLocationName('Rosario, Batangas');
+      }
+    };
+
+    getLocationName();
+  }, []);
+
+  const validationRules = useMemo(() => ({
+    incidentType: {
+      required: true
+    },
+    description: {
+      required: true,
+      minLength: 10
+    },
+    location: {
+      required: true
+    },
+    priorityLevel: {
+      required: true
+    },
+    safetyStatus: {
+      required: true
+    },
+    guestName: {
+      required: !isAuthenticated
+    },
+    guestContact: {
+      required: !isAuthenticated
+    }
+  }), [isAuthenticated]);
+
   const { fields, setValue, validateAll, getValues, isSubmitting, setIsSubmitting } = useForm<IncidentReportFormData>(
     {
       incidentType: '',
@@ -64,81 +183,15 @@ export default function IncidentReportPage() {
       latitude: null,
       longitude: null,
       priorityLevel: '',
-      safetyStatus: ''
+      safetyStatus: '',
+      guestName: '',
+      guestContact: '',
+      attachments: []
     },
-    {
-      incidentType: {
-        required: true
-      },
-      description: {
-        required: true,
-        minLength: 20
-      },
-      location: {
-        required: true
-      },
-      priorityLevel: {
-        required: true
-      },
-      safetyStatus: {
-        required: true
-      }
-    }
+    validationRules
   );
 
-  // Local reverse geocoding function using coordinate-based area detection
-  const reverseGeocode = async (lat: number, lng: number) => {
-    setIsReverseGeocoding(true);
 
-    try {
-      // Define local areas in San Juan, Batangas with approximate coordinates
-      const localAreas = [
-        { name: "University of Batangas Campus Area", lat: 13.7565, lng: 121.0583, radius: 0.005 },
-        { name: "San Juan City Center", lat: 13.7500, lng: 121.0600, radius: 0.008 },
-        { name: "San Juan Public Market Area", lat: 13.7520, lng: 121.0590, radius: 0.003 },
-        { name: "Barangay Poblacion", lat: 13.7550, lng: 121.0575, radius: 0.006 },
-        { name: "San Juan Industrial Area", lat: 13.7480, lng: 121.0620, radius: 0.010 },
-        { name: "San Juan Residential District", lat: 13.7530, lng: 121.0580, radius: 0.012 },
-        { name: "San Juan Coastal Area", lat: 13.7400, lng: 121.0650, radius: 0.015 }
-      ];
-
-      // Calculate distance and find nearest area
-      let nearestArea = null;
-      let minDistance = Infinity;
-
-      for (const area of localAreas) {
-        const distance = Math.sqrt(
-          Math.pow(lat - area.lat, 2) + Math.pow(lng - area.lng, 2)
-        );
-
-        if (distance < area.radius && distance < minDistance) {
-          minDistance = distance;
-          nearestArea = area;
-        }
-      }
-
-      // Create descriptive location string
-      let locationString;
-      if (nearestArea) {
-        locationString = `${nearestArea.name}, San Juan, Batangas (GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)})`;
-      } else {
-        // General San Juan area if no specific area matches
-        locationString = `GPS: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-      }
-
-      setValue('location', locationString);
-      return locationString;
-
-    } catch (error) {
-      console.error('Local reverse geocoding failed:', error);
-      // Final fallback
-      const fallbackLocation = `GPS Location: ${lat.toFixed(6)}, ${lng.toFixed(6)} (San Juan, Batangas)`;
-      setValue('location', fallbackLocation);
-      return fallbackLocation;
-    } finally {
-      setIsReverseGeocoding(false);
-    }
-  };
 
   // Rosario, Batangas barangays with lat/lng
   const rosarioBarangays = [
@@ -252,8 +305,24 @@ export default function IncidentReportPage() {
       setValue('latitude', latitude);
       setValue('longitude', longitude);
 
-      // Perform local reverse geocoding to get readable address
-      reverseGeocode(latitude, longitude);
+      // Perform reverse geocoding using the external utility
+      const getGeocodedLocation = async () => {
+        try {
+          const result = await reverseGeocode(latitude, longitude);
+          if (typeof result === 'object' && 'success' in result && result.success) {
+            setValue('location', result.locationName);
+          } else {
+            // Fallback to coordinates if geocoding fails
+            setValue('location', `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+          }
+        } catch (error) {
+          console.error('Geocoding failed:', error);
+          // Fallback to coordinates
+          setValue('location', `GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+        }
+      };
+
+      getGeocodedLocation();
     }
   }, [latitude, longitude, locationMethod, setValue]);
 
@@ -284,6 +353,18 @@ export default function IncidentReportPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Validate terms checkbox
+    if (!agreedToTerms) {
+      setTermsError('You must agree to the Terms of Service and Privacy Policy.');
+      return;
+    }
+
+    // Validate reCAPTCHA
+    if (!recaptchaValue) {
+      setRecaptchaError('Please complete the reCAPTCHA.');
+      return;
+    }
+
     console.log('Form submission started...');
     console.log('Current form values:', getValues());
     console.log('Authentication status:', isAuthenticated);
@@ -304,12 +385,8 @@ export default function IncidentReportPage() {
       return;
     }
 
-    // Check if user is authenticated before submitting
-    if (!isAuthenticated) {
-      console.log('User not authenticated, redirecting to login');
-      navigate('/auth/login');
-      return;
-    }
+    // Determine submission endpoint based on authentication status
+    const endpoint = isAuthenticated ? '/api/incidents/report' : '/api/incidents/report-guest';
 
     setIsSubmitting(true);
     setShowErrorMessage(false);
@@ -317,34 +394,52 @@ export default function IncidentReportPage() {
 
     try {
       const raw = getValues();
-      const payload = {
-        incidentType: (raw.incidentType || '').trim(),
-        description: (raw.description || '').trim(),
-        location: (raw.location || '').trim(),
-        latitude: typeof raw.latitude === 'number' ? raw.latitude : (raw.latitude ? parseFloat(String(raw.latitude)) : null),
-        longitude: typeof raw.longitude === 'number' ? raw.longitude : (raw.longitude ? parseFloat(String(raw.longitude)) : null),
-        priorityLevel: (raw.priorityLevel || '').trim(),
-        safetyStatus: (raw.safetyStatus || '').trim(),
-      };
+      const formData = new FormData();
+
+      // Add text fields
+      formData.append('incidentType', (raw.incidentType || '').trim());
+      formData.append('description', (raw.description || '').trim());
+      formData.append('location', (raw.location || '').trim());
+      formData.append('latitude', String(typeof raw.latitude === 'number' ? raw.latitude : (raw.latitude ? parseFloat(String(raw.latitude)) : null)));
+      formData.append('longitude', String(typeof raw.longitude === 'number' ? raw.longitude : (raw.longitude ? parseFloat(String(raw.longitude)) : null)));
+      formData.append('priorityLevel', (raw.priorityLevel || '').trim());
+      formData.append('safetyStatus', (raw.safetyStatus || '').trim());
+      formData.append('recaptchaToken', recaptchaValue || '');
+
+      // Add guest information if not authenticated
+      if (!isAuthenticated) {
+        formData.append('guestName', ((raw as any).guestName || '').trim());
+        formData.append('guestContact', ((raw as any).guestContact || '').trim());
+      }
+
+      // Add attachments
+      selectedFiles.forEach((file, index) => {
+        formData.append('attachments', file);
+      });
 
       // If location is empty but coordinates exist, synthesize a readable fallback
-      if (!payload.location && payload.latitude && payload.longitude) {
-        payload.location = `GPS Location: ${payload.latitude.toFixed(6)}, ${payload.longitude.toFixed(6)} (San Juan, Batangas)`;
+      const location = (raw.location || '').trim();
+      if (!location && raw.latitude && raw.longitude) {
+        formData.set('location', `GPS Location: ${Number(raw.latitude).toFixed(6)}, ${Number(raw.longitude).toFixed(6)} (Rosario, Batangas)`);
       }
 
       console.log('=== FORM SUBMISSION DEBUG ===');
       console.log('Raw form data:', raw);
-      console.log('Prepared payload:', payload);
-      console.log('JSON payload:', JSON.stringify(payload, null, 2));
+      console.log('Selected files:', selectedFiles.length);
+      console.log('FormData contents:');
+      for (const [key, value] of formData.entries()) {
+        if (value instanceof File) {
+          console.log(`${key}: File(${value.name}, ${value.size} bytes, ${value.type})`);
+        } else {
+          console.log(`${key}: ${value}`);
+        }
+      }
 
       // Real API call to save to database
-      const response = await fetch('http://localhost:5000/api/incidents/report', {
+      const response = await fetch(`http://localhost:5000${endpoint}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${userData?.token}`,
-        },
-        body: JSON.stringify(payload)
+        ...(isAuthenticated && userData?.token ? { headers: { 'Authorization': `Bearer ${userData.token}` } } : {}),
+        body: formData
       });
 
       console.log('Response status:', response.status);
@@ -380,15 +475,513 @@ export default function IncidentReportPage() {
       setTimeout(() => setShowErrorMessage(false), 5000);
     } finally {
       setIsSubmitting(false);
+      if (recaptchaRef.current) {
+        recaptchaRef.current.reset();
+      }
+      setRecaptchaValue(null);
     }
   };
 
-  if (!isAuthenticated) {
-    return (
+  // Render incident form sections (shared between authenticated and guest users)
+  const renderIncidentFormSections = () => (
+    <>
+      {/* Incident Type Section */}
+      <div className="space-y-6">
+        <div className="border-b border-gray-200 pb-4">
+          <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+            <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center mr-3">
+              <i className="ri-alert-line text-red-600"></i>
+            </div>
+            Incident Information
+          </h3>
+          <p className="text-gray-600 mt-2">Please provide details about the incident</p>
+        </div>
+
+        <div>
+          <label htmlFor="incidentType" className="block text-sm font-semibold text-gray-700 mb-3">
+            <i className="ri-error-warning-line mr-2 text-red-600"></i>
+            Incident Type <span className="text-red-500">*</span>
+          </label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <i className="ri-alert-line text-gray-400"></i>
+            </div>
+            <select
+              id="incidentType"
+              name="incidentType"
+              value={fields.incidentType.value}
+              onChange={(e) => setValue('incidentType', e.target.value)}
+              className={`w-full pl-10 pr-4 py-4 border rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all appearance-none bg-white ${
+                fields.incidentType.error ? 'border-red-300' : 'border-gray-300'
+              }`}
+            >
+              <option value="">Select incident type...</option>
+              <option value="fire">&#128293; Fire Emergency</option>
+              <option value="medical">&#128657; Medical Emergency</option>
+              <option value="security">&#128737; Security Incident</option>
+              <option value="accident">&#128165; Transport Accident</option>
+              <option value="natural">&#127783; Natural Disaster</option>
+              <option value="other">&#9888; Other Emergency</option>
+            </select>
+            <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+              <i className="ri-arrow-down-s-line text-gray-400"></i>
+            </div>
+          </div>
+          {fields.incidentType.touched && fields.incidentType.error && (
+            <p className="text-red-600 text-sm mt-2">{fields.incidentType.error}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Location Section */}
+      <div className="space-y-6">
+        <div className="border-b border-gray-200 pb-4">
+          <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
+              <i className="ri-map-pin-line text-blue-600"></i>
+            </div>
+            Location Information
+          </h3>
+          <p className="text-gray-600 mt-2">Specify where the incident occurred</p>
+        </div>
+
+        <div className="space-y-4">
+          {/* Location Method Toggle */}
+          <div className="flex items-center space-x-4 mb-4">
+            <label className="block text-sm font-semibold text-gray-700">
+              Location Method:
+            </label>
+            <div className="flex space-x-2">
+              <button
+                type="button"
+                onClick={() => setLocationMethod('manual')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  locationMethod === 'manual'
+                    ? 'bg-blue-600 text-white shadow-lg'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <i className="ri-edit-line mr-2"></i>
+                Manual Entry
+              </button>
+              <button
+                type="button"
+                onClick={handleAutoLocation}
+                disabled={isLoadingLocation || locationLoading}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  locationMethod === 'auto'
+                    ? 'bg-green-600 text-white shadow-lg'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                } ${(isLoadingLocation || locationLoading) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {isLoadingLocation || locationLoading ? (
+                  <>
+                    <i className="ri-loader-4-line animate-spin mr-2"></i>
+                    Getting Location...
+                  </>
+                ) : (
+                  <>
+                    <i className="ri-gps-line mr-2"></i>
+                    Auto-Detect
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Location Input with Search */}
+          <div className="relative">
+            {/* Rosario Barangays Dropdown */}
+            <div className="mt-2 mb-4">
+              <label className="block text-sm font-semibold text-gray-700 mb-1">
+                <i className="ri-map-pin-line mr-2 text-blue-600"></i>
+                Select Barangay (Rosario, Batangas)
+              </label>
+              <select
+                className="w-full px-3 py-3 border border-blue-200 rounded-lg text-sm text-blue-800 font-medium bg-blue-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all mb-1"
+                value={rosarioBarangays.find(b => `Barangay ${b.name}, Rosario, Batangas` === fields.location.value) ? fields.location.value : ''}
+                onChange={e => {
+                  const selected = rosarioBarangays.find(b => `Barangay ${b.name}, Rosario, Batangas` === e.target.value);
+                  if (selected) {
+                    setValue('location', `Barangay ${selected.name}, Rosario, Batangas`);
+                    setValue('latitude', selected.lat);
+                    setValue('longitude', selected.lng);
+                    setShowSuggestions(false);
+                    setLocationMethod('manual');
+                  } else {
+                    setValue('location', '');
+                    setValue('latitude', null);
+                    setValue('longitude', null);
+                  }
+                }}
+              >
+                <option value="">-- Select Barangay --</option>
+                {rosarioBarangays.map(b => (
+                  <option key={b.name} value={`Barangay ${b.name}, Rosario, Batangas`}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-gray-400 text-xs mt-1">Choose a barangay to quickly fill location and coordinates.</p>
+            </div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">
+              <i className="ri-map-pin-line mr-2 text-blue-600"></i>
+              Location Description <span className="text-red-500">*</span>
+            </label>
+
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <i className="ri-map-pin-line text-gray-400"></i>
+              </div>
+              <input
+                type="text"
+                name="location"
+                id="location"
+                value={fields.location.value}
+                onChange={(e) => {
+                  setValue('location', e.target.value);
+                  if (locationMethod === 'auto') {
+                    setLocationMethod('manual');
+                  }
+                }}
+                onFocus={() => {
+                  if (locationSuggestions.length > 0) {
+                    setShowSuggestions(true);
+                  }
+                }}
+                onBlur={() => {
+                  // Delay hiding suggestions to allow clicking
+                  setTimeout(() => setShowSuggestions(false), 200);
+                }}
+                className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                placeholder={locationMethod === 'auto' ? 'Auto-detected location will appear here...' : 'Search for location'}
+                required
+              />
+
+              {/* Loading indicator for search */}
+              {(isSearchingLocation || isReverseGeocoding) && (
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                  <i className="ri-loader-4-line animate-spin text-blue-600"></i>
+                </div>
+              )}
+            </div>
+
+            {/* Location Suggestions Dropdown */}
+            {showSuggestions && locationSuggestions.length > 0 && (
+              <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                {locationSuggestions.map((suggestion, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => handleLocationSelect(suggestion)}
+                    className="w-full px-4 py-3 text-left hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-gray-100 last:border-b-0 transition-colors"
+                  >
+                    <div className="flex items-start space-x-3">
+                      <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <i className="ri-map-pin-line text-blue-600 text-sm"></i>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {suggestion.display_name}
+                        </p>
+                        {suggestion.address && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            {suggestion.address.city || suggestion.address.town || suggestion.address.municipality}, {suggestion.address.province || suggestion.address.state}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Error Messages */}
+            {fields.location.touched && fields.location.error && (
+              <p className="text-red-600 text-sm mt-2">
+                <i className="ri-error-warning-line mr-1"></i>
+                {fields.location.error}
+              </p>
+            )}
+
+            {locationError && (
+              <p className="text-red-600 text-sm mt-2">
+                <i className="ri-error-warning-line mr-1"></i>
+                {locationError}
+              </p>
+            )}
+
+            {/* GPS Coordinates Display */}
+            {latitude && longitude && (
+              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
+                    <i className="ri-gps-line text-green-600 text-sm"></i>
+                  </div>
+                  <div>
+                    <p className="text-green-800 font-medium text-sm">GPS Location Detected</p>
+                    <p className="text-green-600 text-xs">
+                      Coordinates: {latitude.toFixed(6)}, {longitude.toFixed(6)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Priority Level Section */}
+      <div className="space-y-6">
+        <div className="border-b border-gray-200 pb-4">
+          <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+            <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center mr-3">
+              <i className="ri-alarm-warning-line text-orange-600"></i>
+            </div>
+            Priority Level
+          </h3>
+          <p className="text-gray-600 mt-2">How urgent is this incident?</p>
+        </div>
+
+        <div>
+          <label htmlFor="priorityLevel" className="block text-sm font-semibold text-gray-700 mb-3">
+            <i className="ri-alarm-warning-line mr-2 text-orange-600"></i>
+            Priority Level <span className="text-red-500">*</span>
+          </label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <i className="ri-alarm-warning-line text-gray-400"></i>
+            </div>
+            <select
+              id="priorityLevel"
+              name="priorityLevel"
+              value={fields.priorityLevel.value}
+              onChange={(e) => setValue('priorityLevel', e.target.value)}
+              className={`w-full pl-10 pr-4 py-4 border rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all appearance-none bg-white ${
+                fields.priorityLevel.error ? 'border-red-300' : 'border-gray-300'
+              }`}
+            >
+              <option value="">Select priority level...</option>
+              <option value="low">&#128994; Low Priority - Non-urgent, can wait</option>
+              <option value="medium">&#128993; Medium Priority - Moderate urgency</option>
+              <option value="high">&#128308; High Priority - Urgent attention needed</option>
+              <option value="critical">&#128683; Critical - Immediate response required</option>
+            </select>
+            <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+              <i className="ri-arrow-down-s-line text-gray-400"></i>
+            </div>
+          </div>
+          {fields.priorityLevel.touched && fields.priorityLevel.error && (
+            <p className="text-red-600 text-sm mt-2">{fields.priorityLevel.error}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Safety Status Section */}
+      <div className="space-y-6">
+        <div className="border-b border-gray-200 pb-4">
+          <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+            <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
+              <i className="ri-shield-check-line text-green-600"></i>
+            </div>
+            Your Safety Status
+          </h3>
+          <p className="text-gray-600 mt-2">Are you currently safe?</p>
+        </div>
+
+        <div>
+          <label htmlFor="safetyStatus" className="block text-sm font-semibold text-gray-700 mb-3">
+            <i className="ri-shield-check-line mr-2 text-green-600"></i>
+            Your Safety Status <span className="text-red-500">*</span>
+          </label>
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <i className="ri-shield-check-line text-gray-400"></i>
+            </div>
+            <select
+              id="safetyStatus"
+              name="safetyStatus"
+              value={fields.safetyStatus.value}
+              onChange={(e) => setValue('safetyStatus', e.target.value)}
+              className={`w-full pl-10 pr-4 py-4 border rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all appearance-none bg-white ${
+                fields.safetyStatus.error ? 'border-red-300' : 'border-gray-300'
+              }`}
+            >
+              <option value="">Select your safety status...</option>
+              <option value="safe">🟢 I am safe - Not in immediate danger</option>
+              <option value="injured">🟡 I am injured - Need medical attention</option>
+              <option value="danger">🔴 I am in danger - Need immediate help</option>
+            </select>
+            <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+              <i className="ri-arrow-down-s-line text-gray-400"></i>
+            </div>
+          </div>
+          {fields.safetyStatus.touched && fields.safetyStatus.error && (
+            <p className="text-red-600 text-sm mt-2">{fields.safetyStatus.error}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Description Section */}
+      <div className="space-y-6">
+        <div className="border-b border-gray-200 pb-4">
+          <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+            <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
+              <i className="ri-file-text-line text-purple-600"></i>
+            </div>
+            Incident Description
+          </h3>
+          <p className="text-gray-600 mt-2">Provide detailed information about what happened</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-3">
+            <i className="ri-file-text-line mr-2 text-purple-600"></i>
+            Detailed Description <span className="text-red-500">*</span>
+          </label>
+          <textarea
+            value={fields.description.value}
+            onChange={(e) => setValue('description', e.target.value)}
+            className="w-full px-4 py-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all resize-none"
+            rows={6}
+            placeholder="Please provide a detailed description of the incident including:
+• What happened?
+• When did it occur?
+• Who was involved?
+• Any injuries or damages?
+• Current situation status..."
+            required
+          />
+          {fields.description.touched && fields.description.error && (
+            <p className="text-red-600 text-sm mt-2">{fields.description.error}</p>
+          )}
+          <p className="text-gray-500 text-sm mt-2">
+            Minimum 10 characters required. Be as specific as possible to help emergency responders.
+          </p>
+        </div>
+      </div>
+
+      {/* Attachments Section */}
+      <div className="space-y-6">
+        <div className="border-b border-gray-200 pb-4">
+          <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+            <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
+              <i className="ri-image-line text-green-600"></i>
+            </div>
+            Attachments
+          </h3>
+          <p className="text-gray-600 mt-2">Upload photos related to the incident (optional)</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-3">
+            <i className="ri-image-line mr-2 text-green-600"></i>
+            Upload Images
+          </label>
+
+          {/* File Input */}
+          <div className="relative">
+            <input
+              type="file"
+              multiple
+              accept="image/*"
+              onChange={handleFileSelect}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
+            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-green-400 transition-colors">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i className="ri-camera-line text-2xl text-green-600"></i>
+              </div>
+              <p className="text-gray-600 font-medium">Click to upload images</p>
+              <p className="text-gray-400 text-sm mt-1">PNG, JPG, GIF, WebP up to 10MB each (max 5 files)</p>
+            </div>
+          </div>
+
+          {/* Selected Files Preview */}
+          {selectedFiles.length > 0 && (
+            <div className="mt-4 space-y-2">
+              <p className="text-sm font-medium text-gray-700">Selected files:</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {selectedFiles.map((file, index) => (
+                  <div key={index} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg p-3">
+                    <div className="flex items-center space-x-3 flex-1 min-w-0">
+                      <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <i className="ri-image-line text-green-600"></i>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                        <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeFile(index)}
+                      className="text-red-500 hover:text-red-700 p-1"
+                    >
+                      <i className="ri-close-line text-lg"></i>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Attachment Error */}
+          {attachmentError && (
+            <p className="text-red-600 text-sm mt-2">
+              <i className="ri-error-warning-line mr-1"></i>
+              {attachmentError}
+            </p>
+          )}
+
+          <p className="text-gray-500 text-sm mt-2">
+            Attachments help emergency responders better understand the situation. Only image files are accepted.
+          </p>
+        </div>
+      </div>
+
+      {/* Terms of Service and Privacy Policy checkbox */}
+      <div className="mt-6">
+        <label className="inline-flex items-center">
+          <input
+            type="checkbox"
+            checked={agreedToTerms}
+            onChange={onTermsChange}
+            className="form-checkbox h-5 w-5 text-red-600"
+          />
+          <span className="ml-2 text-gray-700 text-sm">
+            I agree to the{' '}
+            <a href="/terms-of-service" target="_blank" rel="noopener noreferrer" className="text-red-600 underline">
+              Terms of Service
+            </a>{' '}
+            and{' '}
+            <a href="/privacy-policy" target="_blank" rel="noopener noreferrer" className="text-red-600 underline">
+              Privacy Policy
+            </a>
+            <span className="text-red-600">*</span>
+          </span>
+        </label>
+        {termsError && <p className="text-red-600 text-sm mt-1">{termsError}</p>}
+      </div>
+
+      {/* reCAPTCHA widget */}
+      <div className="mt-6">
+        <ReCAPTCHA
+          sitekey="6LfVgHUqAAAAAJtQJXShsLo2QbyGby2jquueTZYV"
+          onChange={onRecaptchaChange}
+          ref={recaptchaRef}
+        />
+        {recaptchaError && <p className="text-red-600 text-sm mt-1">{recaptchaError}</p>}
+      </div>
+    </>
+  );
+
+  // Guest form section - show form for unauthenticated users
+  const renderGuestForm = () => (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-red-50 to-orange-100">
         <Navbar isAuthenticated={isAuthenticated} userData={userData || undefined} />
 
-        {/* Enhanced Hero Section for Unauthenticated */}
+      {/* Enhanced Hero Section for Guests */}
         <div className="relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-r from-red-600/5 to-orange-600/5"></div>
           <div className="absolute inset-0 opacity-40">
@@ -413,26 +1006,26 @@ export default function IncidentReportPage() {
               </h1>
               <p className="text-xl md:text-2xl text-gray-600 mb-8 leading-relaxed">
                 Emergency Incident Reporting System
-                <span className="block text-lg text-gray-500 mt-2">Please sign in to submit an incident report</span>
+              <span className="block text-lg text-gray-500 mt-2">Submit incident reports as a guest or create an account for better tracking</span>
               </p>
 
               {/* Enhanced Info Banner */}
-              <div className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200/50 rounded-2xl p-6 max-w-3xl mx-auto shadow-lg backdrop-blur-sm mb-8">
-                <div className="flex items-center justify-center text-red-800">
-                  <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center mr-3">
-                    <i className="ri-information-line text-red-600"></i>
+            <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200/50 rounded-2xl p-6 max-w-3xl mx-auto shadow-lg backdrop-blur-sm mb-8">
+              <div className="flex items-center justify-center text-blue-800">
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                  <i className="ri-information-line text-blue-600"></i>
                   </div>
                   <p className="font-semibold text-lg">
-                    Authentication required for incident reporting
+                  Guest reporting available - No account required
                   </p>
                 </div>
-                <p className="text-red-600 text-sm mt-2 opacity-80">
-                  This helps us track and respond to incidents effectively
+              <p className="text-blue-600 text-sm mt-2 opacity-80">
+                You can submit incident reports without creating an account. Creating an account helps us track your reports better.
                 </p>
               </div>
 
               {/* Login Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
                 <Link
                   to="/auth/login"
                   className="px-8 py-4 bg-gradient-to-r from-red-600 to-orange-600 text-white rounded-xl hover:from-red-700 hover:to-orange-700 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
@@ -451,8 +1044,151 @@ export default function IncidentReportPage() {
             </div>
           </div>
         </div>
+
+      {/* Guest Form */}
+      <div className="container mx-auto px-4 pb-8">
+        <div className="max-w-4xl mx-auto">
+          {/* Success Message */}
+          {showSuccessMessage && (
+            <div className="mb-6 p-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200/50 rounded-2xl shadow-lg backdrop-blur-sm">
+              <div className="flex items-center gap-3 text-green-800">
+                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                  <i className="ri-check-circle-line text-green-600"></i>
+                </div>
+                <div>
+                  <p className="font-semibold text-lg">Incident report submitted successfully!</p>
+                  <p className="text-green-600 text-sm mt-1">Emergency responders have been notified</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {showErrorMessage && (
+            <div className="mb-6 p-6 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200/50 rounded-2xl shadow-lg backdrop-blur-sm">
+              <div className="flex items-center gap-3 text-red-800">
+                <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+                  <i className="ri-error-warning-line text-red-600"></i>
+                </div>
+                <div>
+                  <p className="font-semibold text-lg">Failed to submit report</p>
+                  <p className="text-red-600 text-sm mt-1">{errorMessage}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Guest Incident Report Form */}
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8">
+            <form onSubmit={handleSubmit} className="space-y-8">
+              {/* Guest Information Section */}
+              <div className="space-y-6">
+                <div className="border-b border-gray-200 pb-4">
+                  <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
+                      <i className="ri-user-line text-blue-600"></i>
+                    </div>
+                    Your Information
+                  </h3>
+                  <p className="text-gray-600 mt-2">Please provide your contact details</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label htmlFor="guestName" className="block text-sm font-semibold text-gray-700 mb-3">
+                      <i className="ri-user-line mr-2 text-blue-600"></i>
+                      Full Name <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i className="ri-user-line text-gray-400"></i>
+                      </div>
+                      <input
+                        type="text"
+                        id="guestName"
+                        name="guestName"
+                        value={fields.guestName.value}
+                        onChange={(e) => setValue('guestName', e.target.value)}
+                        className={`w-full pl-10 pr-4 py-4 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all ${
+                          fields.guestName.error ? 'border-red-300' : 'border-gray-300'
+                        }`}
+                        placeholder="Enter your full name"
+                        required
+                      />
+                    </div>
+                    {fields.guestName.touched && fields.guestName.error && (
+                      <p className="text-red-600 text-sm mt-2">{fields.guestName.error}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label htmlFor="guestContact" className="block text-sm font-semibold text-gray-700 mb-3">
+                      <i className="ri-phone-line mr-2 text-blue-600"></i>
+                      Contact Number <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i className="ri-phone-line text-gray-400"></i>
+                      </div>
+                      <input
+                        type="tel"
+                        id="guestContact"
+                        name="guestContact"
+                        value={fields.guestContact.value}
+                        onChange={(e) => setValue('guestContact', e.target.value)}
+                        className={`w-full pl-10 pr-4 py-4 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all ${
+                          fields.guestContact.error ? 'border-red-300' : 'border-gray-300'
+                        }`}
+                        placeholder="Enter your phone number"
+                        required
+                      />
+                    </div>
+                    {fields.guestContact.touched && fields.guestContact.error && (
+                      <p className="text-red-600 text-sm mt-2">{fields.guestContact.error}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Include the same form sections as authenticated users */}
+              {renderIncidentFormSections()}
+
+              {/* Submit Section */}
+              <div className="border-t border-gray-200 pt-8">
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                    disabled={isSubmitting}
+                    className="bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white font-semibold py-4 px-8 rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-300"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <i className="ri-loader-4-line animate-spin mr-2"></i>
+                        Submitting Emergency Report...
+                      </>
+                    ) : (
+                      <>
+                        <i className="ri-send-plane-line mr-2"></i>
+                        Submit Emergency Report
+                      </>
+                    )}
+                  </Button>
+                  
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
       </div>
     );
+
+  // Conditionally render based on authentication status
+  if (!isAuthenticated) {
+    return renderGuestForm();
   }
 
   return (
@@ -541,436 +1277,32 @@ export default function IncidentReportPage() {
           {/* Enhanced Incident Report Form */}
           <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8">
             <form onSubmit={handleSubmit} className="space-y-8">
-              {/* Incident Type Section */}
-              <div className="space-y-6">
-                <div className="border-b border-gray-200 pb-4">
-                  <h3 className="text-xl font-semibold text-gray-900 flex items-center">
-                    <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center mr-3">
-                      <i className="ri-alert-line text-red-600"></i>
-                    </div>
-                    Incident Information
-                  </h3>
-                  <p className="text-gray-600 mt-2">Please provide details about the incident</p>
-                </div>
-
-                <div>
-                  <label htmlFor="incidentType" className="block text-sm font-semibold text-gray-700 mb-3">
-                    <i className="ri-error-warning-line mr-2 text-red-600"></i>
-                    Incident Type <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <i className="ri-alert-line text-gray-400"></i>
-                    </div>
-                    <select
-                      id="incidentType"
-                      name="incidentType"
-                      value={fields.incidentType.value}
-                      onChange={(e) => setValue('incidentType', e.target.value)}
-                      className={`w-full pl-10 pr-4 py-4 border rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all appearance-none bg-white ${
-                        fields.incidentType.error ? 'border-red-300' : 'border-gray-300'
-                      }`}
-                    >
-                      <option value="">Select incident type...</option>
-                      <option value="fire">🔥 Fire Emergency</option>
-                      <option value="medical">❤️ Medical Emergency</option>
-                      <option value="security">🛡️ Security Incident</option>
-                      <option value="accident">🚗 Accident</option>
-                      <option value="natural">🌪️ Natural Disaster</option>
-                      <option value="other">⚠️ Other Emergency</option>
-                    </select>
-                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <i className="ri-arrow-down-s-line text-gray-400"></i>
-                    </div>
-                  </div>
-                  {fields.incidentType.touched && fields.incidentType.error && (
-                    <p className="text-red-600 text-sm mt-2">{fields.incidentType.error}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Location Section */}
-              <div className="space-y-6">
-                <div className="border-b border-gray-200 pb-4">
-                  <h3 className="text-xl font-semibold text-gray-900 flex items-center">
-                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-                      <i className="ri-map-pin-line text-blue-600"></i>
-                    </div>
-                    Location Information
-                  </h3>
-                  <p className="text-gray-600 mt-2">Specify where the incident occurred</p>
-                </div>
-
-                <div className="space-y-4">
-                  {/* Location Method Toggle */}
-                  <div className="flex items-center space-x-4 mb-4">
-                    <label className="block text-sm font-semibold text-gray-700">
-                      Location Method:
-                    </label>
-                    <div className="flex space-x-2">
-                      <button
-                        type="button"
-                        onClick={() => setLocationMethod('manual')}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                          locationMethod === 'manual'
-                            ? 'bg-blue-600 text-white shadow-lg'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        }`}
-                      >
-                        <i className="ri-edit-line mr-2"></i>
-                        Manual Entry
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleAutoLocation}
-                        disabled={isLoadingLocation || locationLoading}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                          locationMethod === 'auto'
-                            ? 'bg-green-600 text-white shadow-lg'
-                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                        } ${(isLoadingLocation || locationLoading) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      >
-                        {isLoadingLocation || locationLoading ? (
-                          <>
-                            <i className="ri-loader-4-line animate-spin mr-2"></i>
-                            Getting Location...
-                          </>
-                        ) : (
-                          <>
-                            <i className="ri-gps-line mr-2"></i>
-                            Auto-Detect
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Location Input with Search */}
-                  <div className="relative">
-                    {/* Rosario Barangays Dropdown */}
-                    <div className="mt-2 mb-4">
-                      <label className="block text-sm font-semibold text-gray-700 mb-1">
-                        <i className="ri-map-pin-line mr-2 text-blue-600"></i>
-                        Select Barangay (Rosario, Batangas)
-                      </label>
-                      <select
-                        className="w-full px-3 py-3 border border-blue-200 rounded-lg text-sm text-blue-800 font-medium bg-blue-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all mb-1"
-                        value={rosarioBarangays.find(b => `Barangay ${b.name}, Rosario, Batangas` === fields.location.value) ? fields.location.value : ''}
-                        onChange={e => {
-                          const selected = rosarioBarangays.find(b => `Barangay ${b.name}, Rosario, Batangas` === e.target.value);
-                          if (selected) {
-                            setValue('location', `Barangay ${selected.name}, Rosario, Batangas`);
-                            setValue('latitude', selected.lat);
-                            setValue('longitude', selected.lng);
-                            setShowSuggestions(false);
-                            setLocationMethod('manual');
-                          } else {
-                            setValue('location', '');
-                            setValue('latitude', null);
-                            setValue('longitude', null);
-                          }
-                        }}
-                      >
-                        <option value="">-- Select Barangay --</option>
-                        {rosarioBarangays.map(b => (
-                          <option key={b.name} value={`Barangay ${b.name}, Rosario, Batangas`}>
-                            {b.name}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="text-gray-400 text-xs mt-1">Choose a barangay to quickly fill location and coordinates.</p>
-                    </div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-3">
-                      <i className="ri-map-pin-line mr-2 text-blue-600"></i>
-                      Location Description <span className="text-red-500">*</span>
-                    </label>
-
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <i className="ri-map-pin-line text-gray-400"></i>
-                      </div>
-                      <input
-                        type="text"
-                        name="location"
-                        id="location"
-                        value={fields.location.value}
-                        onChange={(e) => {
-                          setValue('location', e.target.value);
-                          if (locationMethod === 'auto') {
-                            setLocationMethod('manual');
-                          }
-                        }}
-                        onFocus={() => {
-                          if (locationSuggestions.length > 0) {
-                            setShowSuggestions(true);
-                          }
-                        }}
-                        onBlur={() => {
-                          // Delay hiding suggestions to allow clicking
-                          setTimeout(() => setShowSuggestions(false), 200);
-                        }}
-                        className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                        placeholder={locationMethod === 'auto' ? 'Auto-detected location will appear here...' : 'Search for location (e.g., "University of Batangas", "San Juan City Hall")'}
-                        required
-                      />
-
-                      {/* Loading indicator for search */}
-                      {(isSearchingLocation || isReverseGeocoding) && (
-                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-                          <i className="ri-loader-4-line animate-spin text-blue-600"></i>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Location Suggestions Dropdown */}
-                    {showSuggestions && locationSuggestions.length > 0 && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-                        {locationSuggestions.map((suggestion, index) => (
-                          <button
-                            key={index}
-                            type="button"
-                            onClick={() => handleLocationSelect(suggestion)}
-                            className="w-full px-4 py-3 text-left hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-gray-100 last:border-b-0 transition-colors"
-                          >
-                            <div className="flex items-start space-x-3">
-                              <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                                <i className="ri-map-pin-line text-blue-600 text-sm"></i>
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 truncate">
-                                  {suggestion.display_name}
-                                </p>
-                                {suggestion.address && (
-                                  <p className="text-xs text-gray-500 mt-1">
-                                    {suggestion.address.city || suggestion.address.town || suggestion.address.municipality}, {suggestion.address.province || suggestion.address.state}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Error Messages */}
-                    {fields.location.touched && fields.location.error && (
-                      <p className="text-red-600 text-sm mt-2">
-                        <i className="ri-error-warning-line mr-1"></i>
-                        {fields.location.error}
-                      </p>
-                    )}
-
-                    {locationError && (
-                      <p className="text-red-600 text-sm mt-2">
-                        <i className="ri-error-warning-line mr-1"></i>
-                        {locationError}
-                      </p>
-                    )}
-
-                    {/* GPS Coordinates Display */}
-                    {latitude && longitude && (
-                      <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
-                            <i className="ri-gps-line text-green-600 text-sm"></i>
-                          </div>
-                          <div>
-                            <p className="text-green-800 font-medium text-sm">GPS Location Detected</p>
-                            <p className="text-green-600 text-xs">
-                              Coordinates: {latitude.toFixed(6)}, {longitude.toFixed(6)}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Search Help Text */}
-                    <div className="mt-2 space-y-2">
-                      <p className="text-gray-500 text-sm">
-                        <i className="ri-information-line mr-1"></i>
-                        Start typing to search for locations, or use auto-detect to get your current position
-                      </p>
-                      <p className="text-gray-400 text-xs">
-                        <i className="ri-map-pin-line mr-1"></i>
-                        Available locations: University of Batangas, City Hall, Public Market, Schools, Barangays, and more
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Priority Level Section */}
-              <div className="space-y-6">
-                <div className="border-b border-gray-200 pb-4">
-                  <h3 className="text-xl font-semibold text-gray-900 flex items-center">
-                    <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center mr-3">
-                      <i className="ri-alarm-warning-line text-orange-600"></i>
-                    </div>
-                    Priority Level
-                  </h3>
-                  <p className="text-gray-600 mt-2">How urgent is this incident?</p>
-                </div>
-
-                <div>
-                  <label htmlFor="priorityLevel" className="block text-sm font-semibold text-gray-700 mb-3">
-                    <i className="ri-alarm-warning-line mr-2 text-orange-600"></i>
-                    Priority Level <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <i className="ri-alarm-warning-line text-gray-400"></i>
-                    </div>
-                    <select
-                      id="priorityLevel"
-                      name="priorityLevel"
-                      value={fields.priorityLevel.value}
-                      onChange={(e) => setValue('priorityLevel', e.target.value)}
-                      className={`w-full pl-10 pr-4 py-4 border rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all appearance-none bg-white ${
-                        fields.priorityLevel.error ? 'border-red-300' : 'border-gray-300'
-                      }`}
-                    >
-                      <option value="">Select priority level...</option>
-                      <option value="low">🟢 Low Priority - Non-urgent, can wait</option>
-                      <option value="medium">🟡 Medium Priority - Moderate urgency</option>
-                      <option value="high">🟠 High Priority - Urgent attention needed</option>
-                      <option value="critical">🔴 Critical - Immediate response required</option>
-                    </select>
-                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <i className="ri-arrow-down-s-line text-gray-400"></i>
-                    </div>
-                  </div>
-                  {fields.priorityLevel.touched && fields.priorityLevel.error && (
-                    <p className="text-red-600 text-sm mt-2">{fields.priorityLevel.error}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Safety Status Section */}
-              <div className="space-y-6">
-                <div className="border-b border-gray-200 pb-4">
-                  <h3 className="text-xl font-semibold text-gray-900 flex items-center">
-                    <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
-                      <i className="ri-shield-check-line text-green-600"></i>
-                    </div>
-                    Your Safety Status
-                  </h3>
-                  <p className="text-gray-600 mt-2">Are you currently safe?</p>
-                </div>
-
-                <div>
-                  <label htmlFor="safetyStatus" className="block text-sm font-semibold text-gray-700 mb-3">
-                    <i className="ri-shield-check-line mr-2 text-green-600"></i>
-                    Your Safety Status <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <i className="ri-shield-check-line text-gray-400"></i>
-                    </div>
-                    <select
-                      id="safetyStatus"
-                      name="safetyStatus"
-                      value={fields.safetyStatus.value}
-                      onChange={(e) => setValue('safetyStatus', e.target.value)}
-                      className={`w-full pl-10 pr-4 py-4 border rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all appearance-none bg-white ${
-                        fields.safetyStatus.error ? 'border-red-300' : 'border-gray-300'
-                      }`}
-                    >
-                      <option value="">Select your safety status...</option>
-                      <option value="safe">🟢 I am safe - Not in immediate danger</option>
-                      <option value="injured">🟡 I am injured - Need medical attention</option>
-                      <option value="danger">🔴 I am in danger - Need immediate help</option>
-                    </select>
-                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                      <i className="ri-arrow-down-s-line text-gray-400"></i>
-                    </div>
-                  </div>
-                  {fields.safetyStatus.touched && fields.safetyStatus.error && (
-                    <p className="text-red-600 text-sm mt-2">{fields.safetyStatus.error}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Description Section */}
-              <div className="space-y-6">
-                <div className="border-b border-gray-200 pb-4">
-                  <h3 className="text-xl font-semibold text-gray-900 flex items-center">
-                    <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
-                      <i className="ri-file-text-line text-purple-600"></i>
-                    </div>
-                    Incident Description
-                  </h3>
-                  <p className="text-gray-600 mt-2">Provide detailed information about what happened</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-3">
-                    <i className="ri-file-text-line mr-2 text-purple-600"></i>
-                    Detailed Description <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    value={fields.description.value}
-                    onChange={(e) => setValue('description', e.target.value)}
-                    className="w-full px-4 py-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all resize-none"
-                    rows={6}
-                    placeholder="Please provide a detailed description of the incident including:
-• What happened?
-• When did it occur?
-• Who was involved?
-• Any injuries or damages?
-• Current situation status..."
-                    required
-                  />
-                  {fields.description.touched && fields.description.error && (
-                    <p className="text-red-600 text-sm mt-2">{fields.description.error}</p>
-                  )}
-                  <p className="text-gray-500 text-sm mt-2">
-                    Minimum 20 characters required. Be as specific as possible to help emergency responders.
-                  </p>
-                </div>
-              </div>
-
+              {/* Include the same form sections as authenticated users */}
+              {renderIncidentFormSections()}
 
               {/* Submit Section */}
               <div className="border-t border-gray-200 pt-8">
-              
-
                 <div className="flex flex-col sm:flex-row gap-4">
-                  {isAuthenticated ? (
-                    <>
-                      <Button
-                        type="submit"
-                        variant="primary"
-                        size="lg"
-                        fullWidth
-                        disabled={isSubmitting}
-                        className="bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white font-semibold py-4 px-8 rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-300"
-                      >
-                        {isSubmitting ? (
-                          <>
-                            <i className="ri-loader-4-line animate-spin mr-2"></i>
-                            Submitting Emergency Report...
-                          </>
-                        ) : (
-                          <>
-                            <i className="ri-send-plane-line mr-2"></i>
-                            Submit Emergency Report
-                          </>
-                        )}
-                      </Button>
-
-                     
-
-                    
-                    </>
-                  ) : (
-                    <Link
-                      to="/auth/login"
-                      className="px-8 py-4 bg-gradient-to-r from-red-600 to-orange-600 text-white rounded-xl hover:from-red-700 hover:to-orange-700 transition-all duration-300 font-semibold text-center flex-1 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-                    >
-                      <i className="ri-login-box-line mr-2"></i>
-                      Sign In to Submit Report
-                    </Link>
-                  )}
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="lg"
+                    fullWidth
+                    disabled={isSubmitting}
+                    className="bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white font-semibold py-4 px-8 rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-300"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <i className="ri-loader-4-line animate-spin mr-2"></i>
+                        Submitting Emergency Report...
+                      </>
+                    ) : (
+                      <>
+                        <i className="ri-send-plane-line mr-2"></i>
+                        Submit Emergency Report
+                      </>
+                    )}
+                  </Button>
                   <Link
                     to="/"
                     className="px-8 py-4 border-2 border-gray-300 text-gray-700 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-all duration-300 font-semibold text-center shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
@@ -979,8 +1311,6 @@ export default function IncidentReportPage() {
                     Cancel
                   </Link>
                 </div>
-
-               
               </div>
             </form>
           </div>

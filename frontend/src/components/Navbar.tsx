@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getAuthState, clearAuthData, type UserData } from '../utils/auth';
+import { userAuthApi } from '../utils/api';
 import LogoutModal from './LogoutModal';
 
 interface NavbarProps {
@@ -136,12 +137,15 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
   const handleLogoutConfirm = async () => {
     setIsLoggingOut(true);
     try {
-      // Add a small delay for better UX
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Call the logout API to log the activity
+      await userAuthApi.logout();
       clearAuthData();
       navigate('/');
     } catch (error) {
       console.error('Logout error:', error);
+      // Even if API call fails, clear local auth data
+      clearAuthData();
+      navigate('/');
     } finally {
       setIsLoggingOut(false);
       setShowLogoutModal(false);
@@ -159,9 +163,7 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <div className="flex items-center">
-              <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center shadow-md">
-                <i className="ri-government-line text-xl text-white"></i>
-              </div>
+              <img src="/images/partners/MDRRMO.png" alt="Logo" className="w-10 h-10 rounded-lg shadow-md object-contain" />
               <div className="ml-3">
                 <span className="text-xl font-bold text-gray-900">ProteQ</span>
                 <span className="block text-sm text-gray-600">Rosario, Batangas</span>

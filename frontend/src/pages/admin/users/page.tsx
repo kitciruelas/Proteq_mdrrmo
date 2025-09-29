@@ -197,7 +197,7 @@ const UserManagement: React.FC = () => {
     setShowExportPreview(true);
   };
 
-  const handleExportConfirm = async () => {
+  const handleExport = async (format: 'pdf' | 'csv' | 'excel') => {
     try {
       // Build dynamic export title based on filters
       let filterTitle = 'Users Data Export';
@@ -207,16 +207,25 @@ const UserManagement: React.FC = () => {
       if (userTypeFilter && userTypeFilter !== 'all') filterParts.push(`Type: ${userTypeFilter.charAt(0).toUpperCase() + userTypeFilter.slice(1)}`);
       if (filterParts.length) filterTitle += ` (${filterParts.join(', ')})`;
 
-      await ExportUtils.exportToPDF(
-        allUsersForExport,
-        exportColumns,
-        {
-          filename: 'users_export',
-          title: filterTitle,
-          includeTimestamp: true,
-          logoUrl: '/images/partners/MDRRMO.png'
-        }
-      );
+      const options = {
+        filename: 'users_export',
+        title: filterTitle,
+        includeTimestamp: true,
+        logoUrl: '/images/partners/MDRRMO.png'
+      };
+
+      switch (format) {
+        case 'pdf':
+          await ExportUtils.exportToPDF(allUsersForExport, exportColumns, options);
+          break;
+        case 'csv':
+          ExportUtils.exportToCSV(allUsersForExport, exportColumns, options);
+          break;
+        case 'excel':
+          ExportUtils.exportToExcel(allUsersForExport, exportColumns, options);
+          break;
+      }
+
       showToast({ type: 'success', message: 'Users data exported successfully' });
       setShowExportPreview(false);
     } catch (error) {
@@ -224,6 +233,8 @@ const UserManagement: React.FC = () => {
       showToast({ type: 'error', message: 'Failed to export users data' });
     }
   };
+
+  const handleExportConfirm = () => handleExport('pdf');
 
   const handleExportCancel = () => {
     setShowExportPreview(false);
@@ -275,9 +286,9 @@ const UserManagement: React.FC = () => {
           <button
             onClick={handleExportPreview}
             disabled={loading || allUsersForExport.length === 0}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
           >
-            <i className="ri-file-pdf-line mr-2"></i>
+              <i className="ri-download-line mr-2"></i>
             Export Users ({allUsersForExport.length})
           </button>
         </div>
@@ -623,8 +634,10 @@ const UserManagement: React.FC = () => {
       <ExportPreviewModal
         open={showExportPreview}
         onClose={handleExportCancel}
-        onExport={handleExportConfirm}
-        staff={allUsersForExport}
+        onExportPDF={() => handleExport('pdf')}
+        onExportCSV={() => handleExport('csv')}
+        onExportExcel={() => handleExport('excel')}
+        data={allUsersForExport}
         columns={exportColumns}
         title={(() => {
           let filterTitle = 'Users Data Export';

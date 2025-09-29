@@ -736,13 +736,6 @@ async function sendAlertEmail(alertId, alertData) {
           <div style="background: linear-gradient(135deg, #1f2937 0%, #374151 100%); color: white; padding: 28px; text-align: center; border-radius: 14px; margin-bottom: 28px;">
             <h3 style="margin: 0 0 10px 0; font-size: 20px; font-weight: 700;">Official Emergency Alert</h3>
             <p style="margin: 0 0 18px 0; font-size: 15px; opacity: 0.92;">This is an official alert from the ProteQ Emergency Management System</p>
-            <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/alerts/${alertId}" style="display: inline-flex; align-items: center; gap: 10px; background-color: ${getAlertColor(type)}; color: white; padding: 14px 28px; text-decoration: none; border-radius: 10px; font-size: 15px; font-weight: 700; box-shadow: 0 2px 8px rgba(0,0,0,0.09);">
-              <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"></path>
-                <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"></path>
-              </svg>
-              View Full Alert Details
-            </a>
             <p style="margin: 14px 0 0 0; font-size: 13px; opacity: 0.85;">Sent on: ${new Date().toLocaleString()}</p>
           </div>
         </div>

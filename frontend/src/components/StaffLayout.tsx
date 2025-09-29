@@ -158,8 +158,8 @@ const StaffLayout: React.FC<StaffLayoutProps> = ({ children }) => {
                 <button
                   onClick={() => handleNavigation('/staff')}
                   className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    isActiveRoute('/staff') && !isActiveRoute('/staff/incidents') 
-                      ? 'bg-blue-100 text-blue-700' 
+                    isActiveRoute('/staff') && !isActiveRoute('/staff/incidents')
+                      ? 'bg-blue-100 text-blue-700'
                       : 'text-gray-700 hover:text-blue-600 hover:bg-blue-50'
                   }`}
                 >
@@ -168,12 +168,22 @@ const StaffLayout: React.FC<StaffLayoutProps> = ({ children }) => {
                 <button
                   onClick={() => handleNavigation('/staff/incidents')}
                   className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    isActiveRoute('/staff/incidents') 
-                      ? 'bg-blue-100 text-blue-700' 
+                    isActiveRoute('/staff/incidents') && !isActiveRoute('/staff/incidents/map')
+                      ? 'bg-blue-100 text-blue-700'
                       : 'text-gray-700 hover:text-blue-600 hover:bg-blue-50'
                   }`}
                 >
                   Incident Assigned
+                </button>
+                <button
+                  onClick={() => handleNavigation('/staff/incidents/map')}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    isActiveRoute('/staff/incidents/map')
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'text-gray-700 hover:text-blue-600 hover:bg-blue-50'
+                  }`}
+                >
+                  Map View
                 </button>
               </div>
 
@@ -230,7 +240,7 @@ const StaffLayout: React.FC<StaffLayoutProps> = ({ children }) => {
                       {/* Menu Items */}
                       <div className="py-2">
                         <button
-                          onClick={() => handleNavigation('/profile')}
+                          onClick={() => handleNavigation('/staff/profile')}
                           className="flex items-center w-full text-left px-4 py-3 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-all duration-200 group"
                         >
                           <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-100 transition-colors">
@@ -239,6 +249,19 @@ const StaffLayout: React.FC<StaffLayoutProps> = ({ children }) => {
                           <div>
                             <p className="font-medium text-sm">Account Settings</p>
                             <p className="text-xs text-gray-500">Manage your profile</p>
+                          </div>
+                        </button>
+
+                        <button
+                          onClick={() => handleNavigation('/staff/feedback')}
+                          className="flex items-center w-full text-left px-4 py-3 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-all duration-200 group"
+                        >
+                          <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-100 transition-colors">
+                            <i className="ri-feedback-line text-gray-600 group-hover:text-blue-600"></i>
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm">Submit Feedback</p>
+                            <p className="text-xs text-gray-500">Help us improve the app</p>
                           </div>
                         </button>
 
@@ -294,15 +317,26 @@ const StaffLayout: React.FC<StaffLayoutProps> = ({ children }) => {
                 <button
                   onClick={() => handleNavigation('/staff/incidents')}
                   className={`flex items-center w-full px-4 py-3 rounded-lg transition-all duration-200 font-medium ${
-                    isActiveRoute('/staff/incidents') 
-                      ? 'bg-blue-100 text-blue-700' 
+                    isActiveRoute('/staff/incidents') && !isActiveRoute('/staff/incidents/map')
+                      ? 'bg-blue-100 text-blue-700'
                       : 'text-gray-700 hover:text-blue-600 hover:bg-blue-50'
                   }`}
                 >
                   <i className="ri-error-warning-line text-lg mr-3"></i>
-                  My Incidents
+                  Incident Assigned
                 </button>
-                
+                <button
+                  onClick={() => handleNavigation('/staff/incidents/map')}
+                  className={`flex items-center w-full px-4 py-3 rounded-lg transition-all duration-200 font-medium ${
+                    isActiveRoute('/staff/incidents/map')
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'text-gray-700 hover:text-blue-600 hover:bg-blue-50'
+                  }`}
+                >
+                  <i className="ri-map-pin-line text-lg mr-3"></i>
+                  Map View
+                </button>
+
 
                 <div className="border-t border-gray-200 my-4"></div>
 
@@ -334,7 +368,7 @@ const StaffLayout: React.FC<StaffLayoutProps> = ({ children }) => {
 
                 {/* Mobile Menu Items */}
                 <button
-                  onClick={() => handleNavigation('/profile')}
+                  onClick={() => handleNavigation('/staff/profile')}
                   className="flex items-center w-full px-4 py-3 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 group"
                 >
                   <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-100 transition-colors">
@@ -364,8 +398,8 @@ const StaffLayout: React.FC<StaffLayoutProps> = ({ children }) => {
         )}
 
         {/* Main Content */}
-        <div className="pt-16">
-          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="pt-4">
+          <main className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             {children || <Outlet />}
           </main>
         </div>
@@ -376,7 +410,6 @@ const StaffLayout: React.FC<StaffLayoutProps> = ({ children }) => {
         isOpen={showLogoutModal}
         onClose={handleLogoutCancel}
         onConfirm={handleLogoutConfirm}
-        userData={userData || undefined}
         isLoading={isLoggingOut}
       />
     </>

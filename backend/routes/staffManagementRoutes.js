@@ -98,7 +98,7 @@ router.get('/:id', async (req, res) => {
     console.log('Fetching staff member with ID:', id);
     
     const [staff] = await pool.execute(
-      `SELECT s.id, s.name, s.email, s.phone, s.position, s.department, s.status, 
+      `SELECT s.id, s.name, s.email, s.phone, s.position, s.department, s.status, s.availability,
               s.last_login, s.created_at, s.updated_at, t.id as team_id, t.name as team_name
        FROM staff s
        LEFT JOIN teams t ON s.assigned_team_id = t.id
@@ -275,9 +275,9 @@ router.put('/:id', async (req, res) => {
     try {
       const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip || 'unknown';
       await pool.execute(`
-        INSERT INTO activity_logs (admin_id, action, details, ip_address, created_at)
+        INSERT INTO activity_logs (staff_id, action, details, ip_address, created_at)
         VALUES (?, 'staff_update', ?, ?, NOW())
-      `, [req.user?.id || 1, `Updated staff member ${id} information`, clientIP]);
+      `, [id, `Updated staff member ${currentStaff.name} information`, clientIP]);
       console.log('✅ Activity logged: staff_update');
     } catch (logError) {
       console.error('❌ Failed to log staff update activity:', logError.message);
@@ -371,10 +371,10 @@ router.put('/:id/availability', async (req, res) => {
         message: 'Valid availability is required (available, busy, off-duty)'
       });
     }
-    
+
     // Check if staff member exists
     const [existingStaff] = await pool.execute(
-      'SELECT id FROM staff WHERE id = ?',
+      'SELECT id, name FROM staff WHERE id = ?',
       [id]
     );
     
@@ -391,11 +391,15 @@ router.put('/:id/availability', async (req, res) => {
       [availability, id]
     );
     
-    // Log the availability change
+    // Log the availability change with correct user type
+    const userType = req.user?.role === 'staff' ? 'staff' : 'admin';
+    const userName = req.user?.name || 'Unknown User';
+    const logUser = `${userType} ${userName}`;
+
     await pool.execute(`
-      INSERT INTO activity_logs (admin_id, action, details, created_at)
+      INSERT INTO activity_logs (staff_id, action, details, created_at)
       VALUES (?, 'staff_availability_update', ?, NOW())
-    `, [req.user?.id || 1, `Updated staff ${id} availability to ${availability}`]);
+    `, [id, `Updated staff ${existingStaff[0].name} availability to ${availability}`]);
     
     res.json({
       success: true,

@@ -259,10 +259,26 @@ const SafetyProtocolsManagement: React.FC = () => {
     return 'bg-gray-50 text-gray-600';
   };
 
-  const handleExport = async () => {
+  const handleExport = async (format: 'pdf' | 'csv' | 'excel') => {
     try {
-      // Use the same dynamic title as the export modal
-      await ExportUtils.exportToPDF(exportData, exportColumns, { filename: 'SafetyProtocols', title: getExportTitle() });
+      const options = {
+        filename: 'SafetyProtocols',
+        title: getExportTitle(),
+        includeTimestamp: true
+      };
+
+      switch (format) {
+        case 'pdf':
+          await ExportUtils.exportToPDF(exportData, exportColumns, options);
+          break;
+        case 'csv':
+          ExportUtils.exportToCSV(exportData, exportColumns, options);
+          break;
+        case 'excel':
+          ExportUtils.exportToExcel(exportData, exportColumns, options);
+          break;
+      }
+
       setShowExportModal(false);
       showToast({ type: 'success', message: 'Export successful' });
     } catch (error) {
@@ -628,8 +644,10 @@ const SafetyProtocolsManagement: React.FC = () => {
       <ExportPreviewModal
           open={showExportModal}
           onClose={() => setShowExportModal(false)}
-          onExport={handleExport}
-          staff={exportData}
+          onExportPDF={() => handleExport('pdf')}
+          onExportCSV={() => handleExport('csv')}
+          onExportExcel={() => handleExport('excel')}
+          data={exportData}
           columns={exportColumns}
           title={getExportTitle()}
         />

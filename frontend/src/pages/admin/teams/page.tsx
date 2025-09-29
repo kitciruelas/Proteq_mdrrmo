@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { ConfirmModal } from '../../../components/base/Modal';
 import { useToast } from '../../../components/base/Toast';
+import ExportPreviewModal from '../../../components/base/ExportPreviewModal';
+import type { ExportColumn } from '../../../utils/exportUtils';
+import ExportUtils from '../../../utils/exportUtils';
 
 interface Team {
   id: number;
@@ -28,6 +31,7 @@ const TeamsManagement: React.FC = () => {
   const { showToast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [teamIdToDelete, setTeamIdToDelete] = useState<number | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   const [formData, setFormData] = useState({
     member_no: '',
@@ -37,6 +41,71 @@ const TeamsManagement: React.FC = () => {
 
   const [editingMemberCount, setEditingMemberCount] = useState<number | null>(null);
   const [editingMemberCountValue, setEditingMemberCountValue] = useState<string>('');
+
+  // Export configuration
+  const exportColumns: ExportColumn[] = [
+    { key: 'member_no', label: 'Member No' },
+    { key: 'name', label: 'Team Name' },
+    { key: 'description', label: 'Description' },
+    {
+      key: 'member_count',
+      label: 'Members',
+      format: (value) => `${value || 0} members`
+    },
+    {
+      key: 'created_at',
+      label: 'Created Date',
+      format: (value) => ExportUtils.formatDate(value)
+    },
+    {
+      key: 'updated_at',
+      label: 'Updated Date',
+      format: (value) => ExportUtils.formatDate(value)
+    }
+  ];
+
+  // Export handlers
+  const handleExportCSV = () => {
+    try {
+      ExportUtils.exportToCSV(filteredTeams, exportColumns, {
+        filename: 'teams_export',
+        title: 'Teams Management Report'
+      });
+      showToast({ type: 'success', message: 'Teams exported to CSV successfully' });
+      setShowExportModal(false);
+    } catch (error) {
+      console.error('Export to CSV failed:', error);
+      showToast({ type: 'error', message: 'Failed to export to CSV' });
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      ExportUtils.exportToExcel(filteredTeams, exportColumns, {
+        filename: 'teams_export',
+        title: 'Teams Management Report'
+      });
+      showToast({ type: 'success', message: 'Teams exported to Excel successfully' });
+      setShowExportModal(false);
+    } catch (error) {
+      console.error('Export to Excel failed:', error);
+      showToast({ type: 'error', message: 'Failed to export to Excel' });
+    }
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      await ExportUtils.exportToPDF(filteredTeams, exportColumns, {
+        filename: 'teams_export',
+        title: 'Teams Management Report'
+      });
+      showToast({ type: 'success', message: 'Teams exported to PDF successfully' });
+      setShowExportModal(false);
+    } catch (error) {
+      console.error('Export to PDF failed:', error);
+      showToast({ type: 'error', message: 'Failed to export to PDF' });
+    }
+  };
 
   useEffect(() => {
     fetchTeams();
@@ -296,6 +365,14 @@ const TeamsManagement: React.FC = () => {
             <i className="ri-team-line mr-2"></i>
             Add Team
           </button>
+          <button
+            onClick={() => setShowExportModal(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          >
+            <i className="ri-download-line mr-2"></i>
+            Export Team
+          </button>
+          
         </div>
       </div>
 
@@ -683,6 +760,17 @@ const TeamsManagement: React.FC = () => {
         confirmVariant="secondary"
         icon="ri-delete-bin-line"
         iconColor="text-red-600"
+      />
+
+      <ExportPreviewModal
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        onExportPDF={handleExportPDF}
+        onExportCSV={handleExportCSV}
+        onExportExcel={handleExportExcel}
+        data={filteredTeams}
+        columns={exportColumns.map(col => ({ key: col.key, label: col.label }))}
+        title="Export Teams Data"
       />
     </div>
   );

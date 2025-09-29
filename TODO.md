@@ -1,23 +1,10 @@
-# Status Update Fix - TODO
-
-## Completed Tasks
-- [x] Updated `userManagementApi.updateUserStatus` to accept `status: number` instead of `string`
-- [x] Updated `staffManagementApi.updateStaffStatus` to accept `status: number` for consistency
-- [x] Modified `handleStatusChange` in `page.tsx` to pass `newStatus` directly without string conversion
-- [x] Verified no other usages of these functions in the codebase
-
-## Next Steps
-- [ ] Test the user status update functionality in the application
-- [ ] Verify that status changes work correctly (Active/Inactive)
-- [ ] Check if there are similar issues with other status-related API calls
-- [ ] Monitor for any TypeScript errors after the changes
-
-## Files Modified
-- `frontend/src/utils/api.ts`
-- `frontend/src/pages/admin/users/page.tsx`
-
-## Summary of Changes
-The issue was that the frontend was sending status values as strings ('active'/'inactive') but the backend expected numbers (0/1). Fixed by:
-1. Changing API function parameter types from `string` to `number`
-2. Removing the string conversion in the frontend call
-3. Now sends 0 for inactive, 1 for active as expected by backend
+- [x] Update grid to xl:grid-cols-6 for 6 cards
+- [x] Replace "Resolved Today" card with "Resolved" card using stats.resolvedIncidents
+- [x] Add "High Priority" card using stats.highPriorityIncidents
+- [x] Remove resolvedCasesToday calculation
+- [x] Create backend route for staff dashboard stats
+- [x] Add staffDashboardApi in frontend
+- [x] Update dashboard to use API for stats instead of frontend calculation
+- [x] Fix incidents API to use getStaffIncidents instead of getIncidents for assigned incidents
+- [x] Update Priority Statistics to calculate from assigned incidents instead of global stats
+- [ ] Test the backend route and frontend integration

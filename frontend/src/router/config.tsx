@@ -12,6 +12,8 @@ import ProfilePage from "../pages/profile/page";
 import EvacuationCenterPage from "../pages/evacuation-center/page";
 import SafetyProtocolsPage from "../pages/safety-protocols/page";
 import HistoryReportPage from "../pages/history-report/page";
+import FeedbackPage from "../pages/feedback/page";
+import StaffFeedbackPage from "../pages/staff/stafffeedback/page";
 
 // Admin Components
 import AdminLayout from "../components/AdminLayout";
@@ -31,10 +33,16 @@ import SafetyProtocolsManagement from "../pages/admin/safety-protocols/page";
 import ActivityLogs from "../pages/admin/activity-logs/page";
 import AdminProfilePage from "../pages/admin/profile/page";
 import TeamsManagement from "../pages/admin/teams/page";
+import AdminFeedbackPage from "../pages/admin/feedback/page";
 import StaffDashboard from "../pages/staff/dashboard/page";
 import StaffIncidentsPage from "../pages/staff/incidents/page";
+import StaffIncidentsMapPage from "../pages/staff/incidents/map/page";
 import StaffIncidentDetails from "../pages/staff/incidents/[id]/page";
+import StaffProfilePage from "../pages/staff/profile/page";
 import StaffLayout from "../components/StaffLayout";
+
+// Admin Incidents Map
+import AdminIncidentsMapPage from "../pages/admin/incidents/map/page";
 
 
 const routes: RouteObject[] = [
@@ -82,6 +90,10 @@ const routes: RouteObject[] = [
     path: "/history-report",
     element: <HistoryReportPage />,
   },
+  {
+    path: "/feedback",
+    element: <FeedbackPage />,
+  },
   // Admin Auth Routes (separate from admin layout)
   {
     path: "/admin/login",
@@ -125,6 +137,10 @@ const routes: RouteObject[] = [
         element: <ViewIncidentDetails />,
       },
       {
+        path: "incidents/map",
+        element: <AdminIncidentsMapPage />,
+      },
+      {
         path: "evacuation/centers",
         element: <EvacuationCentersManagement />,
       },
@@ -145,6 +161,10 @@ const routes: RouteObject[] = [
         element: <ActivityLogs />,
       },
       {
+        path: "feedback",
+        element: <AdminFeedbackPage />,
+      },
+      {
         path: "reports",
         element: <Reports />,
       },
@@ -163,7 +183,7 @@ const routes: RouteObject[] = [
   {
     path: "/staff",
     element: <StaffLayout />,
-    children: [
+      children: [
       {
         path: "",
         element: <StaffDashboard />,
@@ -177,8 +197,20 @@ const routes: RouteObject[] = [
         element: <StaffIncidentsPage />,
       },
       {
+        path: "incidents/map",
+        element: <StaffIncidentsMapPage />,
+      },
+      {
         path: "incidents/:id",
         element: <StaffIncidentDetails />,
+      },
+      {
+        path: "feedback",
+        element: <StaffFeedbackPage />,
+      },
+      {
+        path: "profile",
+        element: <StaffProfilePage />,
       },
     ],
   },

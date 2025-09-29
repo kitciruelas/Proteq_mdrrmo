@@ -3,6 +3,7 @@ import { incidentsApi, teamsApi, staffManagementApi, activityLogsApi } from '../
 import ExportPreviewModal from '../../../../components/base/ExportPreviewModal';
 import { ExportUtils } from '../../../../utils/exportUtils';
 import type { ExportColumn } from '../../../../utils/exportUtils';
+import { useToast } from '../../../../components/base/Toast';
 
 interface Incident {
   id: number;
@@ -95,6 +96,7 @@ const incidentExportColumns: ExportColumn[] = [
 ];
 
 const ViewIncidents: React.FC = () => {
+  const { showToast } = useToast();
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -118,6 +120,7 @@ const ViewIncidents: React.FC = () => {
   const [isValidating, setIsValidating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showExportPreview, setShowExportPreview] = useState(false);
+
 
   // Helper function to check if assignment button should be disabled
   const isAssignmentButtonDisabled = () => {
@@ -778,18 +781,7 @@ const ViewIncidents: React.FC = () => {
                         <span className="ml-1 text-xs">(Rejected)</span>
                       )}
                     </span>
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getSafetyStatusColor(incident.safetyStatus)}`}>
-                      {incident.safetyStatus.replace('_', ' ').toUpperCase()}
-                    </span>
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                      incident.validationStatus === 'validated' 
-                        ? 'bg-green-100 text-green-800 border border-green-200' 
-                        : incident.validationStatus === 'rejected'
-                        ? 'bg-red-100 text-red-800 border border-red-200'
-                        : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                    }`}>
-                      {incident.validationStatus.charAt(0).toUpperCase() + incident.validationStatus.slice(1)}
-                    </span>
+
                   </div>
                   <p className="text-gray-600 mb-3">{incident.description}</p>
                   <div className="flex items-center text-sm text-gray-500 space-x-4">
@@ -912,6 +904,26 @@ const ViewIncidents: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700">Priority</label>
                   <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full border ${getPriorityColor(selectedIncident.priorityLevel)}`}>
                     {selectedIncident.priorityLevel.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Safety Status</label>
+                  <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${getSafetyStatusColor(selectedIncident.safetyStatus)}`}>
+                    {selectedIncident.safetyStatus.replace('_', ' ').toUpperCase()}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Validation Status</label>
+                  <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${
+                    selectedIncident.validationStatus === 'validated'
+                      ? 'bg-green-100 text-green-800 border border-green-200'
+                      : selectedIncident.validationStatus === 'rejected'
+                      ? 'bg-red-100 text-red-800 border border-red-200'
+                      : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
+                  }`}>
+                    {selectedIncident.validationStatus.charAt(0).toUpperCase() + selectedIncident.validationStatus.slice(1)}
                   </span>
                 </div>
               </div>
@@ -1556,9 +1568,28 @@ const ViewIncidents: React.FC = () => {
       <ExportPreviewModal
         open={showExportPreview}
         onClose={() => setShowExportPreview(false)}
-        onExport={handleExport}
-        staff={filteredIncidents}
+        onExportPDF={handleExport}
+        onExportCSV={() => {
+          ExportUtils.exportToCSV(filteredIncidents, incidentExportColumns, {
+            filename: 'incidents_export',
+            title: 'Incidents Report',
+            includeTimestamp: true
+          });
+          showToast({ type: 'success', message: 'Incidents data exported to CSV successfully' });
+          setShowExportPreview(false);
+        }}
+        onExportExcel={() => {
+          ExportUtils.exportToExcel(filteredIncidents, incidentExportColumns, {
+            filename: 'incidents_export',
+            title: 'Incidents Report',
+            includeTimestamp: true
+          });
+          showToast({ type: 'success', message: 'Incidents data exported to Excel successfully' });
+          setShowExportPreview(false);
+        }}
+        data={filteredIncidents}
         columns={incidentExportColumns.map(col => ({ key: col.key, label: col.label }))}
+        title={`Incidents Report (${filteredIncidents.length})`}
       />
 
     </div>

@@ -23,7 +23,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ collapsed = false, onToggle
   const sidebarItems: SidebarItem[] = [
     {
       id: 'dashboard',
-      label: 'Dashboard Analytics',
+      label: 'Dashboard',
       icon: 'ri-dashboard-3-line',
       path: '/admin/dashboard'
     },
@@ -54,7 +54,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ collapsed = false, onToggle
   path: '/admin/evacuation/routes'
 },
 */
-
+        
         {
           id: 'evacuation-resources',
           label: 'Evacuation Resources',
@@ -107,6 +107,13 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ collapsed = false, onToggle
       icon: 'ri-shield-check-line',
       path: '/admin/safety-protocols'
     },
+
+      {
+      id: 'feedback',
+      label: 'User Feedback',
+      icon: 'ri-chat-1-line',
+      path: '/admin/feedback'
+    },
    
     {
       id: 'activity-logs',
@@ -114,6 +121,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ collapsed = false, onToggle
       icon: 'ri-history-line',
       path: '/admin/activity-logs'
     }
+  
   ];
 
   const toggleExpanded = (itemId: string) => {

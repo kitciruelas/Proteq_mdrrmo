@@ -137,4 +137,68 @@ router.get('/stats', async (req, res) => {
     }
 });
 
+// Get public testimonials (feedback for display on home page)
+router.get('/testimonials', async (req, res) => {
+    try {
+        const pool = require('../config/conn');
+        const limit = parseInt(req.query.limit) || 6; // Default to 6 testimonials
+
+        // Get feedback with user information, ordered by creation date (newest first)
+        // Only get feedback with ratings (assuming rated feedback is more positive)
+        const [feedbackRows] = await pool.execute(`
+            SELECT
+                f.id,
+                f.message,
+                f.rating,
+                f.created_at,
+                CASE
+                    WHEN f.general_user_id IS NOT NULL THEN JSON_OBJECT(
+                        'name', CONCAT(gu.first_name, ' ', gu.last_name),
+                        'type', 'Resident'
+                    )
+                    WHEN f.staff_id IS NOT NULL THEN JSON_OBJECT(
+                        'name', s.name,
+                        'type', 'Staff',
+                        'department', s.department
+                    )
+                    ELSE NULL
+                END as user_info
+            FROM feedback f
+            LEFT JOIN general_users gu ON f.general_user_id = gu.user_id
+            LEFT JOIN staff s ON f.staff_id = s.id
+            WHERE f.rating IS NOT NULL AND f.rating >= 3
+            AND (f.general_user_id IS NOT NULL OR f.staff_id IS NOT NULL)
+            ORDER BY f.created_at DESC
+            LIMIT ?
+        `, [limit]);
+
+        // Parse user_info JSON strings to objects and format for testimonials
+        const testimonials = feedbackRows.map(row => {
+            const userInfo = JSON.parse(row.user_info);
+            return {
+                id: row.id,
+                quote: row.message,
+                rating: row.rating,
+                name: userInfo.name,
+                type: userInfo.type,
+                department: userInfo.type === 'Staff' ? userInfo.department : undefined,
+                created_at: row.created_at
+            };
+        });
+
+        res.json({
+            success: true,
+            testimonials: testimonials
+        });
+
+    } catch (error) {
+        console.error('Error fetching public testimonials:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch testimonials',
+            error: error.message
+        });
+    }
+});
+
 module.exports = router;

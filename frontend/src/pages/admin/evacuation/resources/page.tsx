@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { evacuationCentersApi } from '../../../../utils/api';
 import { ConfirmModal } from '../../../../components/base/Modal';
 import { useToast } from '../../../../components/base/Toast';
+import ExportPreviewModal from '../../../../components/base/ExportPreviewModal';
+import type { ExportColumn } from '../../../../utils/exportUtils';
+import ExportUtils from '../../../../utils/exportUtils';
 
 // Simple SVG icons to match the centers page style
 const SearchIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
@@ -59,6 +62,12 @@ const SupplyIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   </svg>
 );
 
+const DownloadIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <svg {...props} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+  </svg>
+);
+
 interface EvacuationResource {
   resource_id: number;
   center_id: number;
@@ -99,6 +108,7 @@ const EvacuationResourcesPage: React.FC = () => {
   const [resourceIdToDelete, setResourceIdToDelete] = useState<number | null>(null);
   const [showImageModal, setShowImageModal] = useState(false);
   const [selectedImage, setSelectedImage] = useState<{src: string, alt: string} | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -364,6 +374,92 @@ const EvacuationResourcesPage: React.FC = () => {
     setSelectedImage(null);
   };
 
+  // Export functionality
+  const exportColumns: ExportColumn[] = [
+    { key: 'name', label: 'Resource Name' },
+    { key: 'type', label: 'Type' },
+    { key: 'quantity', label: 'Quantity' },
+    {
+      key: 'created_at',
+      label: 'Created Date',
+      format: (value) => new Date(value).toLocaleDateString()
+    },
+    {
+      key: 'updated_at',
+      label: 'Last Updated',
+      format: (value) => new Date(value).toLocaleDateString()
+    }
+  ];
+
+  const prepareExportData = () => {
+    return filteredResources.map(resource => ({
+      name: resource.name,
+      type: resource.type.charAt(0).toUpperCase() + resource.type.slice(1),
+      quantity: resource.quantity,
+      created_at: resource.created_at,
+      updated_at: resource.updated_at
+    }));
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      const exportData = prepareExportData();
+      await ExportUtils.exportToPDF(
+        exportData,
+        exportColumns,
+        {
+          filename: `evacuation-resources-${centers.find(c => c.center_id === selectedCenter)?.name || 'all'}`,
+          title: `Evacuation Resources - ${centers.find(c => c.center_id === selectedCenter)?.name || 'All Centers'}`,
+          includeTimestamp: true
+        }
+      );
+      showToast({ type: 'success', message: 'PDF exported successfully' });
+      setShowExportModal(false);
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      showToast({ type: 'error', message: 'Failed to export PDF' });
+    }
+  };
+
+  const handleExportCSV = () => {
+    try {
+      const exportData = prepareExportData();
+      ExportUtils.exportToCSV(
+        exportData,
+        exportColumns,
+        {
+          filename: `evacuation-resources-${centers.find(c => c.center_id === selectedCenter)?.name || 'all'}`,
+          includeTimestamp: true
+        }
+      );
+      showToast({ type: 'success', message: 'CSV exported successfully' });
+      setShowExportModal(false);
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      showToast({ type: 'error', message: 'Failed to export CSV' });
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      const exportData = prepareExportData();
+      ExportUtils.exportToExcel(
+        exportData,
+        exportColumns,
+        {
+          filename: `evacuation-resources-${centers.find(c => c.center_id === selectedCenter)?.name || 'all'}`,
+          title: `Evacuation Resources - ${centers.find(c => c.center_id === selectedCenter)?.name || 'All Centers'}`,
+          includeTimestamp: true
+        }
+      );
+      showToast({ type: 'success', message: 'Excel exported successfully' });
+      setShowExportModal(false);
+    } catch (error) {
+      console.error('Error exporting Excel:', error);
+      showToast({ type: 'error', message: 'Failed to export Excel' });
+    }
+  };
+
   // Filter resources based on search and type filter
   const filteredResources = resources.filter(resource => {
     const matchesSearch = resource.name.toLowerCase().includes(search.toLowerCase());
@@ -424,16 +520,27 @@ const EvacuationResourcesPage: React.FC = () => {
           <p className="text-gray-600 mt-1">Manage resources and supplies at evacuation centers</p>
         </div>
         {selectedCenter && (
-          <button
-            onClick={() => {
-              setError('');
-              setShowModal(true);
-            }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-          >
-            <PlusIcon className="w-4 h-4 mr-2" />
-            Add New Resource
-          </button>
+          <div className="flex gap-3">
+          
+            <button
+              onClick={() => {
+                setError('');
+                setShowModal(true);
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+            >
+              <PlusIcon className="w-4 h-4 mr-2" />
+              Add New Resource
+            </button>
+              <button
+              onClick={() => setShowExportModal(true)}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center"
+              title="Export Resources"
+            >
+              <DownloadIcon className="w-4 h-4 mr-2" />
+              Export Resources
+            </button>
+          </div>
         )}
       </div>
 
@@ -847,6 +954,18 @@ const EvacuationResourcesPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Export Modal */}
+      <ExportPreviewModal
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        onExportPDF={handleExportPDF}
+        onExportCSV={handleExportCSV}
+        onExportExcel={handleExportExcel}
+        data={prepareExportData()}
+        columns={exportColumns}
+        title={`Evacuation Resources - ${centers.find(c => c.center_id === selectedCenter)?.name || 'All Centers'}`}
+      />
     </div>
   );
 };

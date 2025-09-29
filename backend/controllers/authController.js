@@ -1,3 +1,4 @@
+
 const pool = require('../config/conn');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -100,14 +101,22 @@ const loginUser = async (req, res) => {
         };
 
         // Generate JWT token
+        if (!process.env.JWT_SECRET) {
+            console.error('JWT_SECRET environment variable is not set');
+            return res.status(500).json({
+                success: false,
+                message: 'Server configuration error'
+            });
+        }
+
         const token = jwt.sign(
-            { 
-                id: user.user_id, 
-                email: user.email, 
+            {
+                id: user.user_id,
+                email: user.email,
                 role: user.user_type,
                 type: 'user'
             },
-            process.env.JWT_SECRET || 'your-secret-key',
+            process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );
 
@@ -213,6 +222,14 @@ const loginAdmin = async (req, res) => {
         };
 
         // Generate JWT token
+        if (!process.env.JWT_SECRET) {
+            console.error('JWT_SECRET environment variable is not set');
+            return res.status(500).json({
+                success: false,
+                message: 'Server configuration error'
+            });
+        }
+
         const token = jwt.sign(
             {
                 id: admin.admin_id,
@@ -220,7 +237,7 @@ const loginAdmin = async (req, res) => {
                 role: 'admin',
                 type: 'admin'
             },
-            process.env.JWT_SECRET || 'your-secret-key',
+            process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );
 
@@ -328,14 +345,22 @@ const loginStaff = async (req, res) => {
         };
 
         // Generate JWT token
+        if (!process.env.JWT_SECRET) {
+            console.error('JWT_SECRET environment variable is not set');
+            return res.status(500).json({
+                success: false,
+                message: 'Server configuration error'
+            });
+        }
+
         const token = jwt.sign(
-            { 
-                id: staffMember.id, 
-                email: staffMember.email, 
+            {
+                id: staffMember.id,
+                email: staffMember.email,
                 role: 'staff',
                 type: 'staff'
             },
-            process.env.JWT_SECRET || 'your-secret-key',
+            process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );
 
@@ -353,8 +378,7 @@ const loginStaff = async (req, res) => {
         console.error('Error details:', error.message, error.stack);
         res.status(500).json({
             success: false,
-            message: 'Internal server error',
-            error: error.message // Include error message in response for debugging
+            message: 'Internal server error'
         });
     }
 };
@@ -468,7 +492,7 @@ const registerUser = async (req, res) => {
         console.error('Request body:', req.body);
         res.status(500).json({
             success: false,
-            message: 'Internal server error: ' + error.message
+            message: 'Internal server error'
         });
     }
 };
@@ -553,8 +577,7 @@ const forgotPassword = async (req, res) => {
 
             return res.status(500).json({
                 success: false,
-                message: errorMessage,
-                error: process.env.NODE_ENV === 'development' ? emailError.message : undefined
+                message: errorMessage
             });
         }
 
@@ -569,8 +592,7 @@ const forgotPassword = async (req, res) => {
         console.error('Error stack:', error.stack);
         res.status(500).json({
             success: false,
-            message: 'Internal server error',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            message: 'Internal server error'
         });
     }
 };
@@ -772,7 +794,14 @@ const logoutUser = async (req, res) => {
 
         if (token) {
             try {
-                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+                if (!process.env.JWT_SECRET) {
+                    console.error('JWT_SECRET environment variable is not set');
+                    return res.status(500).json({
+                        success: false,
+                        message: 'Server configuration error'
+                    });
+                }
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
                 if (decoded.type === 'user') {
                     userId = decoded.id;
                     userEmail = decoded.email;
@@ -826,7 +855,14 @@ const logoutStaff = async (req, res) => {
 
         if (token) {
             try {
-                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+                if (!process.env.JWT_SECRET) {
+                    console.error('JWT_SECRET environment variable is not set');
+                    return res.status(500).json({
+                        success: false,
+                        message: 'Server configuration error'
+                    });
+                }
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
                 if (decoded.type === 'staff') {
                     staffId = decoded.id;
                     staffEmail = decoded.email;

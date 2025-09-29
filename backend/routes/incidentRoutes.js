@@ -455,15 +455,7 @@ router.post('/report-guest', upload.array('attachments', 5), async (req, res) =>
 
     res.status(500).json({
       success: false,
-      message: 'Failed to submit guest incident report. Please try again.',
-      error: process.env.NODE_ENV === 'development' ? {
-        message: error.message,
-        code: error.code,
-        errno: error.errno,
-        sqlState: error.sqlState,
-        sqlMessage: error.sqlMessage,
-        stack: error.stack
-      } : undefined
+      message: 'Failed to submit guest incident report. Please try again.'
     });
   }
 });
@@ -1064,9 +1056,9 @@ router.put('/:id/update-status', authenticateStaff, async (req, res) => {
         const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip || 'unknown';
 
         await pool.execute(`
-          INSERT INTO activity_logs (admin_id, action, details, ip_address, created_at)
+          INSERT INTO activity_logs (staff_id, action, details, ip_address, created_at)
           VALUES (?, 'incident_status_update', ?, ?, NOW())
-        `, [finalCreatedBy, `Incident #${id} status changed from "${incident.status}" to "${status}"${notes ? `: ${notes}` : ''}`, clientIP]);
+        `, [finalCreatedBy, `Incident #${id} status changed from "${incident.status}" to "${status}"`, clientIP]);
         console.log('✅ Activity logged: incident_status_update');
       } catch (logError) {
         console.error('❌ Failed to log status update activity:', logError.message);
@@ -1191,6 +1183,12 @@ router.get('/staff/:staffId', async (req, res) => {
         s.name as assigned_staff_name,
         CONCAT(gu.first_name, ' ', gu.last_name) as reporter_name,
         gu.phone as reporter_phone,
+        irg.guest_name,
+        irg.guest_contact,
+        CASE
+          WHEN ir.reported_by IS NULL THEN 'guest'
+          ELSE 'user'
+        END as reporter_type,
         CASE
           WHEN ir.assigned_staff_id = ? THEN 'individual'
           WHEN ir.assigned_team_id = ? THEN 'team'
@@ -1200,6 +1198,7 @@ router.get('/staff/:staffId', async (req, res) => {
       LEFT JOIN teams t ON ir.assigned_team_id = t.id
       LEFT JOIN staff s ON ir.assigned_staff_id = s.id
       LEFT JOIN general_users gu ON ir.reported_by = gu.user_id
+      LEFT JOIN incident_report_guests irg ON ir.incident_id = irg.incident_id
       WHERE ir.assigned_staff_id = ? OR ir.assigned_team_id = ?
       ORDER BY ir.date_reported DESC
     `, [staffId, teamId, staffId, teamId]);

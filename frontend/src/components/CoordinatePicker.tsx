@@ -39,8 +39,8 @@ const coordinateMarkerIcon = L.divIcon({
 });
 
 interface CoordinatePickerProps {
-  latitude: number | null;
-  longitude: number | null;
+  latitude: number | string | null;
+  longitude: number | string | null;
   onCoordinateChange: (lat: number, lng: number) => void;
   height?: string;
   center?: [number, number];
@@ -68,10 +68,19 @@ const CoordinatePicker: React.FC<CoordinatePickerProps> = ({
 }) => {
   const [mapCenter, setMapCenter] = useState<[number, number]>(center);
 
+  // Helper function to convert coordinate to number
+  const toNumber = (value: number | string | null): number | null => {
+    if (value === null || value === undefined) return null;
+    const num = typeof value === 'string' ? parseFloat(value) : value;
+    return isNaN(num) ? null : num;
+  };
+
   // Update map center when coordinates change
   useEffect(() => {
-    if (latitude && longitude) {
-      setMapCenter([latitude, longitude]);
+    const latNum = toNumber(latitude);
+    const lngNum = toNumber(longitude);
+    if (latNum !== null && lngNum !== null) {
+      setMapCenter([latNum, lngNum]);
     }
   }, [latitude, longitude]);
 
@@ -97,17 +106,28 @@ const CoordinatePicker: React.FC<CoordinatePickerProps> = ({
           <MapClickHandler onCoordinateChange={onCoordinateChange} />
 
           {/* Selected coordinate marker */}
-          {latitude && longitude && (
-            <Marker
-              position={[latitude, longitude]}
-              icon={coordinateMarkerIcon}
-            />
-          )}
+          {latitude && longitude && (() => {
+            const latNum = toNumber(latitude);
+            const lngNum = toNumber(longitude);
+            return latNum !== null && lngNum !== null ? (
+              <Marker
+                position={[latNum, lngNum]}
+                icon={coordinateMarkerIcon}
+              />
+            ) : null;
+          })()}
         </MapContainer>
       </div>
-      
+
       <div className="mt-2 text-xs text-gray-500">
-        Click on the map to select coordinates. Selected: {latitude ? latitude.toFixed(6) : 'N/A'}, {longitude ? longitude.toFixed(6) : 'N/A'}
+        Click on the map to select coordinates. Selected: {(() => {
+          const latNum = toNumber(latitude);
+          const lngNum = toNumber(longitude);
+          return latNum !== null ? latNum.toFixed(6) : 'N/A';
+        })()}, {(() => {
+          const lngNum = toNumber(longitude);
+          return lngNum !== null ? lngNum.toFixed(6) : 'N/A';
+        })()}
       </div>
     </div>
   );

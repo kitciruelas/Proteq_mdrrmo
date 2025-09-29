@@ -235,7 +235,7 @@ router.get('/analytics', async (req, res) => {
       LIMIT 10
     `);
 
-    // Get monthly incident summary
+    // Get monthly incident summary for last 12 months
     const [monthlyIncidents] = await pool.execute(`
       SELECT
         DATE_FORMAT(created_at, '%Y-%m') as month,
@@ -243,9 +243,20 @@ router.get('/analytics', async (req, res) => {
         SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved_incidents,
         SUM(CASE WHEN priority_level = 'high' OR priority_level = 'critical' THEN 1 ELSE 0 END) as high_priority_incidents
       FROM incident_reports
-      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
       GROUP BY DATE_FORMAT(created_at, '%Y-%m')
       ORDER BY month ASC
+    `);
+
+    // Get peak hours analysis (incidents by hour of day)
+    const [peakHoursData] = await pool.execute(`
+      SELECT
+        HOUR(created_at) as hour,
+        COUNT(*) as incident_count
+      FROM incident_reports
+      WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      GROUP BY HOUR(created_at)
+      ORDER BY hour ASC
     `);
 
     res.json({
@@ -256,7 +267,8 @@ router.get('/analytics', async (req, res) => {
         incidentStatus,
         incidentPriority,
         evacuationOccupancy,
-        monthlyIncidents
+        monthlyIncidents,
+        peakHours: peakHoursData
       }
     });
     
@@ -265,6 +277,322 @@ router.get('/analytics', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch analytics data',
+      error: error.message
+    });
+  }
+});
+
+// GET - Location-based incident data for stacked bar chart
+// Updated to extract barangay information from incident descriptions
+router.get('/location-incidents', async (req, res) => {
+  try {
+    console.log('Fetching location-based incident data...');
+
+    // Get all incidents with their descriptions to extract barangay information
+    const [incidentData] = await pool.execute(`
+      SELECT
+        incident_id,
+        incident_type,
+        description,
+        latitude,
+        longitude,
+        date_reported,
+        status,
+        priority_level
+      FROM incident_reports
+      WHERE description IS NOT NULL AND description != ''
+      ORDER BY date_reported DESC
+    `);
+
+    // Function to extract barangay name from description
+    const extractBarangay = (description) => {
+      if (!description) return null;
+
+      const desc = description.toLowerCase();
+
+      // Common barangay patterns in descriptions
+      const barangayPatterns = [
+        /barangay\s+([a-zA-Z\s\d]+)(?:,|\.|$)/i,
+        /brgy\.?\s+([a-zA-Z\s\d]+)(?:,|\.|$)/i,
+        /bgy\.?\s+([a-zA-Z\s\d]+)(?:,|\.|$)/i,
+        /in\s+([a-zA-Z\s\d]+)\s+barangay/i,
+        /at\s+([a-zA-Z\s\d]+)\s+barangay/i,
+        /([a-zA-Z\s\d]+)\s+barangay/i
+      ];
+
+      for (const pattern of barangayPatterns) {
+        const match = desc.match(pattern);
+        if (match && match[1]) {
+          // Clean up the barangay name
+          let barangayName = match[1].trim();
+          // Remove common suffixes and clean up
+          barangayName = barangayName.replace(/\s+(proper|district|area|poblacion)$/i, '');
+          barangayName = barangayName.replace(/^the\s+/i, '');
+          return barangayName.charAt(0).toUpperCase() + barangayName.slice(1).toLowerCase();
+        }
+      }
+
+      return null;
+    };
+
+    // Process incidents and group by barangay
+    const barangayMap = new Map();
+
+    incidentData.forEach(incident => {
+      let barangayName = null;
+
+      // First try to extract barangay from description
+      if (incident.description) {
+        barangayName = extractBarangay(incident.description);
+      }
+
+      // If no barangay found in description, use coordinate-based fallback
+      if (!barangayName) {
+        // Use coordinate ranges as fallback (simplified version)
+        if (incident.latitude >= 14.5 && incident.longitude >= 121.0) {
+          barangayName = 'North Area';
+        } else if (incident.latitude >= 14.4 && incident.longitude >= 121.0) {
+          barangayName = 'Central Area';
+        } else if (incident.latitude >= 14.3 && incident.longitude >= 121.0) {
+          barangayName = 'South Area';
+        } else {
+          barangayName = 'Other Areas';
+        }
+      }
+
+      const incidentType = incident.incident_type;
+
+      if (!barangayMap.has(barangayName)) {
+        barangayMap.set(barangayName, { name: barangayName });
+      }
+
+      // Count incidents by type for each barangay
+      if (!barangayMap.get(barangayName)[incidentType]) {
+        barangayMap.get(barangayName)[incidentType] = 0;
+      }
+      barangayMap.get(barangayName)[incidentType]++;
+    });
+
+    const stackedData = Array.from(barangayMap.values());
+
+    // Sort by total incidents (descending)
+    stackedData.sort((a, b) => {
+      const totalA = Object.keys(a).filter(key => key !== 'name').reduce((sum, key) => sum + (a[key] || 0), 0);
+      const totalB = Object.keys(b).filter(key => key !== 'name').reduce((sum, key) => sum + (b[key] || 0), 0);
+      return totalB - totalA;
+    });
+
+    res.json({
+      success: true,
+      locationIncidents: stackedData,
+      note: 'This data groups incidents by barangay extracted from descriptions. Falls back to area-based grouping if barangay not found in description.',
+      totalIncidents: incidentData.length,
+      barangaysFound: stackedData.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching location-based incident data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch location-based incident data',
+      error: error.message
+    });
+  }
+});
+
+// GET - Monthly incident trends with time period filter
+router.get('/monthly-trends', async (req, res) => {
+  try {
+    console.log('Fetching monthly incident trends...');
+
+    const { period = 'months', limit = 12 } = req.query;
+    let dateFormat, groupBy, dateFilter;
+
+    switch (period) {
+      case 'days':
+        dateFormat = '%Y-%m-%d';
+        groupBy = 'DATE(created_at)';
+        dateFilter = `DATE_SUB(NOW(), INTERVAL ${Math.min(parseInt(limit), 30)} DAY)`;
+        break;
+      case 'weeks':
+        dateFormat = '%Y-%U';
+        groupBy = 'YEARWEEK(created_at)';
+        dateFilter = `DATE_SUB(NOW(), INTERVAL ${Math.min(parseInt(limit), 52)} WEEK)`;
+        break;
+      case 'months':
+      default:
+        dateFormat = '%Y-%m';
+        groupBy = 'DATE_FORMAT(created_at, "%Y-%m")';
+        dateFilter = `DATE_SUB(NOW(), INTERVAL ${Math.min(parseInt(limit), 24)} MONTH)`;
+        break;
+    }
+
+    const [trendsData] = await pool.execute(`
+      SELECT
+        ${groupBy} as period,
+        COUNT(*) as total_incidents,
+        SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) as resolved_incidents,
+        SUM(CASE WHEN priority_level = 'high' OR priority_level = 'critical' THEN 1 ELSE 0 END) as high_priority_incidents
+      FROM incident_reports
+      WHERE created_at >= ${dateFilter}
+      GROUP BY ${groupBy}
+      ORDER BY period ASC
+    `);
+
+    // Format the response data
+    const formattedData = trendsData.map(row => ({
+      period: row.period,
+      total_incidents: row.total_incidents,
+      resolved_incidents: row.resolved_incidents,
+      high_priority_incidents: row.high_priority_incidents
+    }));
+
+    res.json({
+      success: true,
+      trendsData: formattedData,
+      period: period,
+      limit: parseInt(limit),
+      note: `Incident trends for the last ${limit} ${period}. Data grouped by ${period === 'days' ? 'days' : period === 'weeks' ? 'weeks' : 'months'}.`
+    });
+
+  } catch (error) {
+    console.error('Error fetching monthly incident trends:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch monthly incident trends',
+      error: error.message
+    });
+  }
+});
+
+// GET - Seasonal patterns data for clustered column chart
+// Analyzes incident patterns across different seasons and time periods
+router.get('/seasonal-patterns', async (req, res) => {
+  try {
+    console.log('Fetching seasonal patterns data...');
+
+    // Define seasonal periods based on Philippine climate and holidays
+    const seasonalData = await pool.execute(`
+      SELECT
+        incident_type,
+        MONTH(date_reported) as month,
+        YEAR(date_reported) as year,
+        COUNT(*) as count
+      FROM incident_reports
+      WHERE date_reported >= DATE_SUB(NOW(), INTERVAL 2 YEAR)
+      GROUP BY incident_type, YEAR(date_reported), MONTH(date_reported)
+      ORDER BY year DESC, month DESC, incident_type
+    `);
+
+    const incidents = seasonalData[0];
+
+    // Categorize incidents by season and type
+    const seasonalAnalysis = {
+      // Rainy season (June to November) - typically higher flood incidents
+      rainySeason: {
+        floods: 0,
+        otherIncidents: 0,
+        total: 0
+      },
+      // Summer season (March to May) - typically higher fire incidents
+      summerSeason: {
+        fires: 0,
+        otherIncidents: 0,
+        total: 0
+      },
+      // Holiday periods (December, Holy Week) - typically higher accident incidents
+      holidayPeriods: {
+        accidents: 0,
+        otherIncidents: 0,
+        total: 0
+      },
+      // Regular periods (baseline)
+      regularPeriods: {
+        allIncidents: 0,
+        total: 0
+      }
+    };
+
+    // Process incidents by month and categorize
+    incidents.forEach(incident => {
+      const month = incident.month;
+      const type = incident.type || incident.incident_type;
+      const count = incident.count;
+
+      // Rainy season months (June to November)
+      if ([6, 7, 8, 9, 10, 11].includes(month)) {
+        seasonalAnalysis.rainySeason.total += count;
+        if (type.toLowerCase().includes('flood')) {
+          seasonalAnalysis.rainySeason.floods += count;
+        } else {
+          seasonalAnalysis.rainySeason.otherIncidents += count;
+        }
+      }
+      // Summer months (March to May)
+      else if ([3, 4, 5].includes(month)) {
+        seasonalAnalysis.summerSeason.total += count;
+        if (type.toLowerCase().includes('fire')) {
+          seasonalAnalysis.summerSeason.fires += count;
+        } else {
+          seasonalAnalysis.summerSeason.otherIncidents += count;
+        }
+      }
+      // Holiday periods (December, April for Holy Week)
+      else if (month === 12 || month === 4) {
+        seasonalAnalysis.holidayPeriods.total += count;
+        if (type.toLowerCase().includes('accident') || type.toLowerCase().includes('traffic')) {
+          seasonalAnalysis.holidayPeriods.accidents += count;
+        } else {
+          seasonalAnalysis.holidayPeriods.otherIncidents += count;
+        }
+      }
+      // Regular periods (January, February)
+      else {
+        seasonalAnalysis.regularPeriods.total += count;
+        seasonalAnalysis.regularPeriods.allIncidents += count;
+      }
+    });
+
+    // Transform data for clustered column chart
+    const chartData = [
+      {
+        period: 'Rainy Season',
+        floods: seasonalAnalysis.rainySeason.floods,
+        otherIncidents: seasonalAnalysis.rainySeason.otherIncidents,
+        total: seasonalAnalysis.rainySeason.total
+      },
+      {
+        period: 'Summer Season',
+        fires: seasonalAnalysis.summerSeason.fires,
+        otherIncidents: seasonalAnalysis.summerSeason.otherIncidents,
+        total: seasonalAnalysis.summerSeason.total
+      },
+      {
+        period: 'Holiday Periods',
+        accidents: seasonalAnalysis.holidayPeriods.accidents,
+        otherIncidents: seasonalAnalysis.holidayPeriods.otherIncidents,
+        total: seasonalAnalysis.holidayPeriods.total
+      },
+      {
+        period: 'Regular Periods',
+        allIncidents: seasonalAnalysis.regularPeriods.allIncidents,
+        total: seasonalAnalysis.regularPeriods.total
+      }
+    ];
+
+    res.json({
+      success: true,
+      seasonalData: chartData,
+      analysis: seasonalAnalysis,
+      note: 'Seasonal analysis based on Philippine climate patterns and holiday periods. Data covers the last 2 years.',
+      totalIncidentsAnalyzed: incidents.reduce((sum, inc) => sum + inc.count, 0)
+    });
+
+  } catch (error) {
+    console.error('Error fetching seasonal patterns data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch seasonal patterns data',
       error: error.message
     });
   }

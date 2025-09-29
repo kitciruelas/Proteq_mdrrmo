@@ -1,824 +1,913 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { getAuthState } from '../../../utils/auth';
-import { incidentsApi, teamsApi, staffManagementApi } from '../../../utils/api';
+"use client"
+
+import type React from "react"
+import { useState, useEffect } from "react"
+import { getAuthState } from "../../../utils/auth"
+import { incidentsApi, teamsApi, staffManagementApi } from "../../../utils/api"
+
+import ExportPreviewModal from "../../../components/base/ExportPreviewModal"
+import type { ExportColumn } from "../../../utils/exportUtils"
+import ExportUtils from "../../../utils/exportUtils"
+import { useToast } from "../../../components/base/Toast"
 
 interface Incident {
-  incident_id: number;
-  incident_type: string;
-  description: string;
-  location: string;
-  latitude: number | string;
-  longitude: number | string;
-  priority_level: string;
-  reporter_safe_status: string;
-  status: string;
-  reported_by: string;
-  reporter_name: string;
-  assigned_team_id?: number | null;
-  assigned_team_name?: string;
-  assigned_staff_id?: number | null;
-  assigned_staff_name?: string;
-  date_reported: string;
-  date_resolved?: string;
-  assignment_type?: 'individual' | 'team' | 'unknown';
-  resolvedLocation?: string;
+  incident_id: number
+  incident_type: string
+  description: string
+  location: string
+  latitude: number | string
+  longitude: number | string
+  priority_level: string
+  reporter_safe_status: string
+  status: string
+  reported_by: string | null
+  reporter_name: string
+  reporter_phone?: string
+  guest_name?: string
+  guest_id?: number
+  guest_contact?: string
+  reporter_type?: "guest" | "user"
+  attachment?: string | null
+  assigned_team_id?: number | null
+  assigned_team_name?: string
+  assigned_staff_id?: number | null
+  assigned_staff_name?: string
+  date_reported: string
+  date_resolved?: string
+  assignment_type?: "individual" | "team" | "unknown"
+  resolvedLocation?: string
 }
 
 interface Team {
-  id: number;
-  name: string;
-  description: string;
-  member_count: number;
+  id: number
+  name: string
+  description: string
+  member_count: number
 }
 
 const StaffIncidentsPage: React.FC = () => {
-  const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [filteredIncidents, setFilteredIncidents] = useState<Incident[]>([]);
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [availableStaff, setAvailableStaff] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [priorityFilter, setPriorityFilter] = useState<string>('all');
-  const [assignmentFilter, setAssignmentFilter] = useState<string>('all'); // 'all', 'individual', 'team'
-  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
-  const [showIncidentModal, setShowIncidentModal] = useState(false);
-  const [showAssignmentModal, setShowAssignmentModal] = useState(false);
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const [assignmentType, setAssignmentType] = useState<'team' | 'staff'>('team');
-  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
-  const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null);
-  const [emailStatus, setEmailStatus] = useState<{sent: boolean, details?: any} | null>(null);
-  const [isAssigning, setIsAssigning] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState<string>('');
-  const [updateNotes, setUpdateNotes] = useState<string>('');
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
-  const [refreshInterval, setRefreshInterval] = useState<number | null>(null);
-  const [notifications, setNotifications] = useState<Array<{id: string, message: string, type: 'info' | 'success' | 'warning' | 'error'}>>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([])
+  const [filteredIncidents, setFilteredIncidents] = useState<Incident[]>([])
+  const [teams, setTeams] = useState<Team[]>([])
+  const [availableStaff, setAvailableStaff] = useState<any[]>([])
 
-  const addNotification = (message: string, type: 'info' | 'success' | 'warning' | 'error') => {
-    const id = Date.now().toString();
-    setNotifications(prev => [...prev, { id, message, type }]);
+  const [searchTerm, setSearchTerm] = useState("")
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [priorityFilter, setPriorityFilter] = useState<string>("all")
+  const [assignmentFilter, setAssignmentFilter] = useState<string>("all") // 'all', 'individual', 'team'
+  const [viewMode, setViewMode] = useState<"active" | "history">("active") // 'active' for unresolved, 'history' for resolved
+  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null)
+  const [showIncidentModal, setShowIncidentModal] = useState(false)
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false)
+  const [showUpdateModal, setShowUpdateModal] = useState(false)
+  const [assignmentType, setAssignmentType] = useState<"team" | "staff">("team")
+  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
+  const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null)
+  const [emailStatus, setEmailStatus] = useState<{ sent: boolean; details?: any } | null>(null)
+  const [isAssigning, setIsAssigning] = useState(false)
+  const [isUpdating, setIsUpdating] = useState(false)
+  const [updateStatus, setUpdateStatus] = useState<string>("")
+  const [updateNotes, setUpdateNotes] = useState<string>("")
+  const [notifications, setNotifications] = useState<
+    Array<{ id: string; message: string; type: "info" | "success" | "warning" | "error" }>
+  >([])
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
+
+  const toast = useToast()
+
+  const addNotification = (message: string, type: "info" | "success" | "warning" | "error") => {
+    const id = Date.now().toString()
+    setNotifications((prev) => [...prev, { id, message, type }])
     // Auto-remove notification after 5 seconds
     setTimeout(() => {
-      setNotifications(prev => prev.filter(n => n.id !== id));
-    }, 5000);
-  };
-  const [locationCache, setLocationCache] = useState<{[key: string]: string}>({});
-  const [geocodingInProgress, setGeocodingInProgress] = useState<{[key: string]: boolean}>({});
+      setNotifications((prev) => prev.filter((n) => n.id !== id))
+    }, 5000)
+  }
+  const [locationCache, setLocationCache] = useState<{ [key: string]: string }>({})
+  const [geocodingInProgress, setGeocodingInProgress] = useState<{ [key: string]: boolean }>({})
 
-  const authState = getAuthState();
-  const currentStaffId = authState.userData?.id || authState.userData?.staff_id || authState.userData?.user_id;
-  const currentStaffTeamId = authState.userData?.assigned_team_id;
-  
-  console.log('🔐 Auth state:', authState);
-  console.log('👤 Current staff ID:', currentStaffId);
-  console.log('👥 Current staff team ID:', currentStaffTeamId);
+  const authState = getAuthState()
+  const currentStaffId = authState.userData?.id || authState.userData?.staff_id || authState.userData?.user_id
+  const currentStaffTeamId = authState.userData?.assigned_team_id
+
+  console.log("🔐 Auth state:", authState)
+  console.log("👤 Current staff ID:", currentStaffId)
+  console.log("👥 Current staff team ID:", currentStaffTeamId)
 
   useEffect(() => {
     if (currentStaffId) {
-      fetchIncidents();
-      fetchTeams();
-      fetchAvailableStaff();
+      fetchIncidents()
+      fetchTeams()
+      fetchAvailableStaff()
     }
-  }, [currentStaffId]);
-
-  // Auto-refresh functionality
-  useEffect(() => {
-    if (autoRefresh && currentStaffId) {
-      // Set up auto-refresh every 30 seconds
-      const interval = window.setInterval(() => {
-        console.log('🔄 Auto-refreshing incidents...');
-        fetchIncidents();
-        setLastRefresh(new Date());
-      }, 30000); // 30 seconds
-
-      setRefreshInterval(interval);
-
-      return () => {
-        if (interval) {
-          clearInterval(interval);
-        }
-      };
-    } else if (refreshInterval) {
-      clearInterval(refreshInterval);
-      setRefreshInterval(null);
-    }
-  }, [autoRefresh, currentStaffId]);
+  }, [currentStaffId])
 
   useEffect(() => {
-    filterIncidents();
-  }, [incidents, searchTerm, statusFilter, priorityFilter, assignmentFilter]);
+    filterIncidents()
+  }, [incidents, searchTerm, statusFilter, priorityFilter, assignmentFilter, viewMode])
+
+  // Export columns configuration
+  const exportColumns: ExportColumn[] = [
+    { key: "incident_id", label: "Incident ID" },
+    { key: "incident_type", label: "Type" },
+    { key: "description", label: "Description" },
+    { key: "resolvedLocation", label: "Location" },
+    { key: "reporter_name", label: "Reporter" },
+    { key: "reporter_type", label: "Reporter Type" },
+    { key: "assigned_team_name", label: "Assigned Team" },
+    { key: "date_reported", label: "Date Reported", format: (value) => ExportUtils.formatDateTime(value) },
+    { key: "updated_at", label: "Date Resolved", format: (value) => (value ? ExportUtils.formatDateTime(value) : "") },
+  ]
+
+  // Export functions
+  const handleExportPDF = async () => {
+    try {
+      await ExportUtils.exportToPDF(filteredIncidents, exportColumns, {
+        filename: "staff_incidents",
+        title: "Staff Incidents Report",
+        includeTimestamp: true,
+      })
+      toast.showToast({ type: "success", message: "PDF export completed successfully" })
+      setShowExportModal(false)
+    } catch (error) {
+      console.error("PDF export failed:", error)
+      toast.showToast({ type: "error", message: "Failed to export PDF" })
+    }
+  }
+
+  const handleExportCSV = () => {
+    try {
+      ExportUtils.exportToCSV(filteredIncidents, exportColumns, {
+        filename: "staff_incidents",
+        includeTimestamp: true,
+      })
+      toast.showToast({ type: "success", message: "CSV export completed successfully" })
+      setShowExportModal(false)
+    } catch (error) {
+      console.error("CSV export failed:", error)
+      toast.showToast({ type: "error", message: "Failed to export CSV" })
+    }
+  }
+
+  const handleExportExcel = () => {
+    try {
+      ExportUtils.exportToExcel(filteredIncidents, exportColumns, {
+        filename: "staff_incidents",
+        includeTimestamp: true,
+      })
+      toast.showToast({ type: "success", message: "Excel export completed successfully" })
+      setShowExportModal(false)
+    } catch (error) {
+      console.error("Excel export failed:", error)
+      toast.showToast({ type: "error", message: "Failed to export Excel" })
+    }
+  }
 
   const fetchIncidents = async () => {
     try {
-      setLoading(true);
-      console.log('🔍 Fetching incidents for staff ID:', currentStaffId);
-      
+      console.log("🔍 Fetching incidents for staff ID:", currentStaffId)
+
       // Use the new staff-specific endpoint
       if (!currentStaffId) {
-        console.error('❌ No staff ID available');
-        return;
+        console.error("❌ No staff ID available")
+        return
       }
-      const response = await incidentsApi.getStaffIncidents(Number(currentStaffId));
-      
+      const response = await incidentsApi.getStaffIncidents(Number(currentStaffId))
+
       if (response.success && response.incidents) {
-        console.log('📋 Staff incidents response:', response);
-        console.log('👤 Staff info:', response.staffInfo);
-        console.log('📊 Assignment stats:', response.assignmentStats);
-        
+        console.log("📋 Staff incidents response:", response)
+        console.log("👤 Staff info:", response.staffInfo)
+        console.log("📊 Assignment stats:", response.assignmentStats)
+
         // Geocode locations for each incident
         const incidentsWithLocations = await Promise.all(
           response.incidents.map(async (incident: any) => {
             try {
-              const locationName = await getLocationName(incident.latitude, incident.longitude);
+              const locationName = await getLocationName(incident.latitude, incident.longitude)
               return {
                 ...incident,
-                resolvedLocation: locationName
-              };
+                resolvedLocation: locationName,
+              }
             } catch (error) {
-              console.error('Error geocoding incident location:', error);
+              console.error("Error geocoding incident location:", error)
               return {
                 ...incident,
-                resolvedLocation: `${Number(incident.latitude).toFixed(4)}, ${Number(incident.longitude).toFixed(4)}`
-              };
+                resolvedLocation: `${Number(incident.latitude).toFixed(4)}, ${Number(incident.longitude).toFixed(4)}`,
+              }
             }
-          })
-        );
-        
-        setIncidents(incidentsWithLocations);
-        
+          }),
+        )
+
+        setIncidents(incidentsWithLocations)
+
         // Update team ID from the response if available
         if (response.staffInfo?.teamId && !currentStaffTeamId) {
-          console.log('🔄 Updating team ID from response:', response.staffInfo.teamId);
+          console.log("🔄 Updating team ID from response:", response.staffInfo.teamId)
           // Note: In a real app, you might want to update the auth state here
         }
       }
     } catch (error) {
-      console.error('Error fetching staff incidents:', error);
-    } finally {
-      setLoading(false);
+      console.error("Error fetching staff incidents:", error)
     }
-  };
+  }
 
   const fetchTeams = async () => {
     try {
-      const response = await teamsApi.getTeams();
+      const response = await teamsApi.getTeams()
       if (response.success && response.teams) {
-        setTeams(response.teams);
+        setTeams(response.teams)
       }
     } catch (error) {
-      console.error('Error fetching teams:', error);
+      console.error("Error fetching teams:", error)
     }
-  };
+  }
 
   const fetchAvailableStaff = async () => {
     try {
-      const response = await staffManagementApi.getStaff({ status: 'active' });
+      const response = await staffManagementApi.getStaff({ status: "active" })
       if (response.success && response.data?.users) {
-        setAvailableStaff(response.data.users);
+        setAvailableStaff(response.data.users)
       }
     } catch (error) {
-      console.error('Error fetching available staff:', error);
+      console.error("Error fetching available staff:", error)
     }
-  };
-
-  const handleManualRefresh = async () => {
-    console.log('🔄 Manual refresh triggered');
-    setLastRefresh(new Date());
-    await fetchIncidents();
-    
-    // Add notification
-    const notificationId = Date.now().toString();
-    setNotifications(prev => [...prev, {
-      id: notificationId,
-      message: 'Incidents refreshed successfully',
-      type: 'success'
-    }]);
-    
-    // Remove notification after 3 seconds
-    setTimeout(() => {
-      setNotifications(prev => prev.filter(n => n.id !== notificationId));
-    }, 3000);
-  };
+  }
 
   // Geocoding function to convert coordinates to location names
   const getLocationName = async (latitude: number | string, longitude: number | string): Promise<string> => {
-    const lat = Number(latitude);
-    const lng = Number(longitude);
-    const cacheKey = `${lat},${lng}`;
-    
+    const lat = Number(latitude)
+    const lng = Number(longitude)
+    const cacheKey = `${lat},${lng}`
+
     // Check cache first
     if (locationCache[cacheKey]) {
-      return locationCache[cacheKey];
+      return locationCache[cacheKey]
     }
 
     // Set geocoding in progress
-    setGeocodingInProgress(prev => ({ ...prev, [cacheKey]: true }));
+    setGeocodingInProgress((prev) => ({ ...prev, [cacheKey]: true }))
 
     try {
       // Use OpenStreetMap Nominatim API (free, no API key required)
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`
-      );
-      
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`,
+      )
+
       if (response.ok) {
-        const data = await response.json();
-        
+        const data = await response.json()
+
         // Extract location name from response
-        let locationName = '';
-        
+        let locationName = ""
+
         if (data.display_name) {
           // Parse the display_name to get a more readable format
-          const parts = data.display_name.split(', ');
+          const parts = data.display_name.split(", ")
           // Take the first 3 parts for a concise location name
-          locationName = parts.slice(0, 3).join(', ');
+          locationName = parts.slice(0, 3).join(", ")
         } else if (data.address) {
           // Fallback to address components
-          const address = data.address;
+          const address = data.address
           if (address.road && address.city) {
-            locationName = `${address.road}, ${address.city}`;
+            locationName = `${address.road}, ${address.city}`
           } else if (address.city) {
-            locationName = address.city;
+            locationName = address.city
           } else if (address.town) {
-            locationName = address.town;
+            locationName = address.town
           } else if (address.village) {
-            locationName = address.village;
+            locationName = address.village
           } else {
-            locationName = 'Unknown Location';
+            locationName = "Unknown Location"
           }
         } else {
-          locationName = 'Unknown Location';
+          locationName = "Unknown Location"
         }
-        
+
         // Cache the result
-        setLocationCache(prev => ({
+        setLocationCache((prev) => ({
           ...prev,
-          [cacheKey]: locationName
-        }));
-        
-        return locationName;
+          [cacheKey]: locationName,
+        }))
+
+        return locationName
       }
     } catch (error) {
-      console.error('Error geocoding coordinates:', error);
+      console.error("Error geocoding coordinates:", error)
     } finally {
       // Clear geocoding in progress
-      setGeocodingInProgress(prev => ({ ...prev, [cacheKey]: false }));
+      setGeocodingInProgress((prev) => ({ ...prev, [cacheKey]: false }))
     }
-    
+
     // Fallback to coordinates if geocoding fails
-    return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
-  };
+    return `${lat.toFixed(4)}, ${lng.toFixed(4)}`
+  }
 
   const filterIncidents = () => {
-    let filtered = incidents;
+    let filtered = incidents
+
+    // View mode filter (first priority)
+    if (viewMode === "active") {
+      // Show only unresolved incidents: pending and in_progress
+      filtered = filtered.filter((incident) => incident.status === "pending" || incident.status === "in_progress")
+    } else if (viewMode === "history") {
+      // Show only resolved incidents: resolved and closed
+      filtered = filtered.filter((incident) => incident.status === "resolved" || incident.status === "closed")
+    }
 
     // Search filter
     if (searchTerm) {
-      filtered = filtered.filter(incident =>
-        incident.incident_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        incident.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        incident.location.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      filtered = filtered.filter(
+        (incident) =>
+          incident.incident_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          incident.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          incident.location.toLowerCase().includes(searchTerm.toLowerCase()),
+      )
     }
 
-    // Status filter
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(incident => incident.status === statusFilter);
+    // Status filter (only applies within the view mode)
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((incident) => incident.status === statusFilter)
     }
 
     // Priority filter
-    if (priorityFilter !== 'all') {
-      filtered = filtered.filter(incident => incident.priority_level === priorityFilter);
+    if (priorityFilter !== "all") {
+      filtered = filtered.filter((incident) => incident.priority_level === priorityFilter)
     }
 
     // Assignment filter
-    if (assignmentFilter !== 'all') {
-      if (assignmentFilter === 'individual') {
-        filtered = filtered.filter(incident => incident.assigned_staff_id === currentStaffId);
-      } else if (assignmentFilter === 'team') {
-        filtered = filtered.filter(incident => incident.assigned_team_id === currentStaffTeamId);
+    if (assignmentFilter !== "all") {
+      if (assignmentFilter === "individual") {
+        filtered = filtered.filter((incident) => incident.assigned_staff_id === currentStaffId)
+      } else if (assignmentFilter === "team") {
+        filtered = filtered.filter((incident) => incident.assigned_team_id === currentStaffTeamId)
       }
     }
 
-    setFilteredIncidents(filtered);
-  };
+    setFilteredIncidents(filtered)
+  }
 
   const handleAssignTeam = async (incidentId: number, teamId: number | null) => {
     try {
-      setIsAssigning(true);
-      setEmailStatus(null);
-      
-      console.log('🔄 Assigning team to incident:', { incidentId, teamId });
-      
-      const response = await incidentsApi.assignTeamToIncident(incidentId, teamId);
-      
-      console.log('✅ Team assignment response:', response);
-      
+      setIsAssigning(true)
+      setEmailStatus(null)
+
+      console.log("🔄 Assigning team to incident:", { incidentId, teamId })
+
+      const response = await incidentsApi.assignTeamToIncident(incidentId, teamId)
+
+      console.log("✅ Team assignment response:", response)
+
       // Update local state
-      setIncidents(prev => prev.map(incident => {
-        if (incident.incident_id === incidentId) {
-          const selectedTeam = teams.find(team => team.id === teamId);
-          return {
-            ...incident,
-            assigned_team_id: teamId,
-            assigned_team_name: selectedTeam?.name || undefined,
-            assigned_staff_id: undefined, // Clear staff assignment when team is assigned
-            assigned_staff_name: undefined
-          };
-        }
-        return incident;
-      }));
-      
+      setIncidents((prev) =>
+        prev.map((incident) => {
+          if (incident.incident_id === incidentId) {
+            const selectedTeam = teams.find((team) => team.id === teamId)
+            return {
+              ...incident,
+              assigned_team_id: teamId,
+              assigned_team_name: selectedTeam?.name || undefined,
+              assigned_staff_id: undefined, // Clear staff assignment when team is assigned
+              assigned_staff_name: undefined,
+            }
+          }
+          return incident
+        }),
+      )
+
       // Show email status
       if (response?.emailSent) {
         setEmailStatus({
           sent: true,
-          details: response.emailDetails
-        });
-        console.log('📧 Email notifications sent successfully:', response.emailDetails);
+          details: response.emailDetails,
+        })
+        console.log("📧 Email notifications sent successfully:", response.emailDetails)
       } else {
         setEmailStatus({
           sent: false,
-          details: response.emailDetails || { error: 'No email details provided' }
-        });
-        console.log('⚠️ Email notifications failed:', response.emailDetails);
+          details: response.emailDetails || { error: "No email details provided" },
+        })
+        console.log("⚠️ Email notifications failed:", response.emailDetails)
       }
-      
+
       setTimeout(() => {
-        setShowAssignmentModal(false);
-        setEmailStatus(null);
-      }, 3000);
-      
+        setShowAssignmentModal(false)
+        setEmailStatus(null)
+      }, 3000)
     } catch (error) {
-      console.error('❌ Error assigning team to incident:', error);
+      console.error("❌ Error assigning team to incident:", error)
       setEmailStatus({
         sent: false,
-        details: { error: error instanceof Error ? error.message : 'Unknown error' }
-      });
+        details: { error: error instanceof Error ? error.message : "Unknown error" },
+      })
     } finally {
-      setIsAssigning(false);
+      setIsAssigning(false)
     }
-  };
+  }
 
   const handleAssignStaff = async (incidentId: number, staffId: number | null) => {
     try {
-      setIsAssigning(true);
-      setEmailStatus(null);
-      
-      console.log('🔄 Assigning staff to incident:', { incidentId, staffId });
-      
-      const response = await incidentsApi.assignStaffToIncident(incidentId, staffId);
-      
-      console.log('✅ Staff assignment response:', response);
-      
+      setIsAssigning(true)
+      setEmailStatus(null)
+
+      console.log("🔄 Assigning staff to incident:", { incidentId, staffId })
+
+      const response = await incidentsApi.assignStaffToIncident(incidentId, staffId)
+
+      console.log("✅ Staff assignment response:", response)
+
       // Update local state
-      setIncidents(prev => prev.map(incident => {
-        if (incident.incident_id === incidentId) {
-          return {
-            ...incident,
-            assigned_staff_id: staffId,
-            assigned_staff_name: staffId ? 'Assigned Staff' : undefined,
-            assigned_team_id: undefined, // Clear team assignment when staff is assigned
-            assigned_team_name: undefined
-          };
-        }
-        return incident;
-      }));
-      
+      setIncidents((prev) =>
+        prev.map((incident) => {
+          if (incident.incident_id === incidentId) {
+            return {
+              ...incident,
+              assigned_staff_id: staffId,
+              assigned_staff_name: staffId ? "Assigned Staff" : undefined,
+              assigned_team_id: undefined, // Clear team assignment when staff is assigned
+              assigned_team_name: undefined,
+            }
+          }
+          return incident
+        }),
+      )
+
       // Show email status
       if (response?.emailSent) {
         setEmailStatus({
           sent: true,
-          details: response.emailDetails
-        });
-        console.log('📧 Email notification sent successfully:', response.emailDetails);
+          details: response.emailDetails,
+        })
+        console.log("📧 Email notification sent successfully:", response.emailDetails)
       } else {
         setEmailStatus({
           sent: false,
-          details: response.emailDetails || { error: 'No email details provided' }
-        });
-        console.log('⚠️ Email notification failed:', response.emailDetails);
+          details: response.emailDetails || { error: "No email details provided" },
+        })
+        console.log("⚠️ Email notification failed:", response.emailDetails)
       }
-      
+
       setTimeout(() => {
-        setShowAssignmentModal(false);
-        setEmailStatus(null);
-      }, 3000);
-      
+        setShowAssignmentModal(false)
+        setEmailStatus(null)
+      }, 3000)
     } catch (error) {
-      console.error('❌ Error assigning staff to incident:', error);
+      console.error("❌ Error assigning staff to incident:", error)
       setEmailStatus({
         sent: false,
-        details: { error: error instanceof Error ? error.message : 'Unknown error' }
-      });
+        details: { error: error instanceof Error ? error.message : "Unknown error" },
+      })
     } finally {
-      setIsAssigning(false);
+      setIsAssigning(false)
     }
-  };
+  }
 
   const handleUpdateIncident = async (incidentId: number, status: string, notes: string) => {
     try {
-      setIsUpdating(true);
-      setEmailStatus(null);
-      
-      console.log('🔄 Updating incident:', { incidentId, status, notes });
-      
+      setIsUpdating(true)
+      setEmailStatus(null)
+
+      console.log("🔄 Updating incident:", { incidentId, status, notes })
+
       // Call the update API
-      const response = await incidentsApi.updateIncidentStatus(incidentId, { status, notes });
-      
-      console.log('✅ Update response:', response);
-      
+      const response = await incidentsApi.updateIncidentStatus(incidentId, { status, notes })
+
+      console.log("✅ Update response:", response)
+
       // Update local state
-      setIncidents(prev => prev.map(incident => {
-        if (incident.incident_id === incidentId) {
-          return {
-            ...incident,
-            status: status
-          };
-        }
-        return incident;
-      }));
-      
+      setIncidents((prev) =>
+        prev.map((incident) => {
+          if (incident.incident_id === incidentId) {
+            return {
+              ...incident,
+              status: status,
+            }
+          }
+          return incident
+        }),
+      )
+
       // Show success notification
-      const notificationId = Date.now().toString();
-      setNotifications(prev => [...prev, {
-        id: notificationId,
-        message: 'Incident updated successfully',
-        type: 'success'
-      }]);
-      
+      const notificationId = Date.now().toString()
+      setNotifications((prev) => [
+        ...prev,
+        {
+          id: notificationId,
+          message: "Incident updated successfully",
+          type: "success",
+        },
+      ])
+
       setTimeout(() => {
-        setNotifications(prev => prev.filter(n => n.id !== notificationId));
-      }, 3000);
-      
+        setNotifications((prev) => prev.filter((n) => n.id !== notificationId))
+      }, 3000)
+
       // Close modal
       setTimeout(() => {
-        setShowUpdateModal(false);
-        setUpdateStatus('');
-        setUpdateNotes('');
-      }, 1000);
-      
+        setShowUpdateModal(false)
+        setUpdateStatus("")
+        setUpdateNotes("")
+      }, 1000)
     } catch (error) {
-      console.error('❌ Error updating incident:', error);
-      
+      console.error("❌ Error updating incident:", error)
+
       // Show error notification
-      const notificationId = Date.now().toString();
-      setNotifications(prev => [...prev, {
-        id: notificationId,
-        message: 'Failed to update incident',
-        type: 'error'
-      }]);
-      
+      const notificationId = Date.now().toString()
+      setNotifications((prev) => [
+        ...prev,
+        {
+          id: notificationId,
+          message: "Failed to update incident",
+          type: "error",
+        },
+      ])
+
       setTimeout(() => {
-        setNotifications(prev => prev.filter(n => n.id !== notificationId));
-      }, 3000);
+        setNotifications((prev) => prev.filter((n) => n.id !== notificationId))
+      }, 3000)
     } finally {
-      setIsUpdating(false);
+      setIsUpdating(false)
     }
-  };
+  }
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'critical': return 'bg-red-100 text-red-800 border-red-200';
-      case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
-      case 'moderate': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'low': return 'bg-green-100 text-green-800 border-green-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+      case "critical":
+        return "bg-red-100 text-red-800 border-red-200"
+      case "high":
+        return "bg-orange-100 text-orange-800 border-orange-200"
+      case "moderate":
+        return "bg-yellow-100 text-yellow-800 border-yellow-200"
+      case "low":
+        return "bg-green-100 text-green-800 border-green-200"
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200"
     }
-  };
+  }
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'pending': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'in_progress': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'resolved': return 'bg-green-100 text-green-800 border-green-200';
-      case 'closed': return 'bg-gray-100 text-gray-800 border-gray-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+      case "pending":
+        return "bg-yellow-100 text-yellow-800 border-yellow-200"
+      case "in_progress":
+        return "bg-blue-100 text-blue-800 border-blue-200"
+      case "resolved":
+        return "bg-green-100 text-green-800 border-green-200"
+      case "closed":
+        return "bg-gray-100 text-gray-800 border-gray-200"
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200"
     }
-  };
+  }
 
   const getStatusText = (status: string) => {
-    return status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
-  };
+    return status.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase())
+  }
 
   const getAssignmentType = (incident: Incident) => {
     // Use the assignment_type from backend if available, otherwise fallback to logic
     if (incident.assignment_type) {
-      return incident.assignment_type;
+      return incident.assignment_type
     }
-    
+
     if (incident.assigned_staff_id === currentStaffId) {
-      return 'individual';
+      return "individual"
     } else if (incident.assigned_team_id === currentStaffTeamId) {
-      return 'team';
+      return "team"
     }
-    return 'unknown';
-  };
+    return "unknown"
+  }
 
   const getAssignmentBadge = (incident: Incident) => {
-    const assignmentType = getAssignmentType(incident);
-    if (assignmentType === 'individual') {
-      return <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 border border-blue-200">Individual</span>;
-    } else if (assignmentType === 'team') {
-      return <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 border border-purple-200">Team</span>;
+    const assignmentType = getAssignmentType(incident)
+    if (assignmentType === "individual") {
+      return (
+        <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+          Individual
+        </span>
+      )
+    } else if (assignmentType === "team") {
+      return (
+        <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+          Team
+        </span>
+      )
     }
-    return null;
-  };
+    return null
+  }
 
   const openIncidentModal = (incident: Incident) => {
-    setSelectedIncident(incident);
-    setShowIncidentModal(true);
-  };
+    setSelectedIncident(incident)
+    setShowIncidentModal(true)
+  }
 
   const closeIncidentModal = () => {
-    setShowIncidentModal(false);
-    setSelectedIncident(null);
-  };
+    setShowIncidentModal(false)
+    setSelectedIncident(null)
+  }
 
   const openAssignmentModal = (incident: Incident) => {
-    setSelectedIncident(incident);
-    setAssignmentType('team');
-    setSelectedTeamId(incident.assigned_team_id || null);
-    setSelectedStaffId(incident.assigned_staff_id || null);
-    setShowAssignmentModal(true);
-  };
+    setSelectedIncident(incident)
+    setAssignmentType("team")
+    setSelectedTeamId(incident.assigned_team_id || null)
+    setSelectedStaffId(incident.assigned_staff_id || null)
+    setShowAssignmentModal(true)
+  }
 
   const closeAssignmentModal = () => {
-    setShowAssignmentModal(false);
-    setSelectedIncident(null);
-    setSelectedTeamId(null);
-    setSelectedStaffId(null);
-    setEmailStatus(null);
-  };
+    setShowAssignmentModal(false)
+    setSelectedIncident(null)
+    setSelectedTeamId(null)
+    setSelectedStaffId(null)
+    setEmailStatus(null)
+  }
 
   const openUpdateModal = (incident: Incident) => {
     // Prevent opening update modal for resolved or closed incidents
-    if (incident.status === 'resolved' || incident.status === 'closed') {
-      addNotification('Cannot update incident. Resolved and closed incidents cannot be modified.', 'error');
-      return;
+    if (incident.status === "resolved" || incident.status === "closed") {
+      addNotification("Cannot update incident. Resolved and closed incidents cannot be modified.", "error")
+      return
     }
-    
-    setSelectedIncident(incident);
-    setUpdateStatus(incident.status);
-    setUpdateNotes('');
-    setShowUpdateModal(true);
-  };
+
+    setSelectedIncident(incident)
+    setUpdateStatus(incident.status)
+    setUpdateNotes("")
+    setShowUpdateModal(true)
+  }
 
   const closeUpdateModal = () => {
-    setShowUpdateModal(false);
-    setSelectedIncident(null);
-    setUpdateStatus('');
-    setUpdateNotes('');
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
+    setShowUpdateModal(false)
+    setSelectedIncident(null)
+    setUpdateStatus("")
+    setUpdateNotes("")
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-3 sm:py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">My Incidents</h1>
-              <p className="text-gray-600">Manage incidents assigned to you individually or to your team</p>
-              <div className="flex items-center mt-2 space-x-4">
-                <div className="flex items-center space-x-2">
-                  <div className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-green-500' : 'bg-gray-400'}`}></div>
-                  <span className="text-sm text-gray-500">
-                    {autoRefresh ? 'Auto-refresh enabled' : 'Auto-refresh disabled'}
-                  </span>
-                </div>
-                <span className="text-sm text-gray-400">
-                  Last updated: {lastRefresh.toLocaleTimeString()}
-                </span>
-              </div>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+                {viewMode === "active" ? "Active Incidents" : "Incident History"}
+              </h1>
+              <p className="text-sm sm:text-base text-gray-600 mt-1">
+                {viewMode === "active"
+                  ? "Manage incidents assigned to you individually or to your team"
+                  : "View all resolved and closed incidents"}
+              </p>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-3">
               <button
-                onClick={handleManualRefresh}
-                disabled={loading}
-                className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                onClick={() => setShowExportModal(true)}
+                className="inline-flex items-center justify-center px-4 py-2.5 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
               >
-                <i className={`ri-refresh-line mr-2 ${loading ? 'animate-spin' : ''}`}></i>
-                Refresh
+                <i className="ri-download-line mr-2"></i>
+                Export
               </button>
-              <button
-                onClick={() => setAutoRefresh(!autoRefresh)}
-                className={`inline-flex items-center px-3 py-2 border rounded-md shadow-sm text-sm font-medium ${
-                  autoRefresh 
-                    ? 'border-green-300 text-green-700 bg-green-50 hover:bg-green-100' 
-                    : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
-                }`}
-              >
-                <i className={`ri-${autoRefresh ? 'pause' : 'play'}-line mr-2`}></i>
-                {autoRefresh ? 'Pause' : 'Resume'} Auto-refresh
-              </button>
-              <Link
-                to="/staff"
-                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-              >
-                <i className="ri-arrow-left-line mr-2"></i>
-                Back to Dashboard
-              </Link>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Filters and Search */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            {/* Search */}
-            <div>
+      {/* View Mode Tabs */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-3 sm:py-4">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-4 sm:mb-6">
+          <div className="border-b border-gray-200">
+            <nav
+              className="flex flex-col sm:flex-row sm:space-x-8 px-3 sm:px-4 md:px-6 space-y-1 sm:space-y-0"
+              aria-label="Tabs"
+            >
+              <button
+                onClick={() => setViewMode("active")}
+                className={`py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  viewMode === "active"
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                }`}
+              >
+                <i className="ri-alert-line mr-2"></i>
+                Active Incidents
+                <span className="ml-2 py-0.5 px-2 rounded-full text-xs bg-blue-100 text-blue-800">
+                  {incidents.filter((i) => i.status === "pending" || i.status === "in_progress").length}
+                </span>
+              </button>
+              <button
+                onClick={() => setViewMode("history")}
+                className={`py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  viewMode === "history"
+                    ? "border-green-500 text-green-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                }`}
+              >
+                <i className="ri-history-line mr-2"></i>
+                Incident History
+                <span className="ml-2 py-0.5 px-2 rounded-full text-xs bg-green-100 text-green-800">
+                  {incidents.filter((i) => i.status === "resolved" || i.status === "closed").length}
+                </span>
+              </button>
+            </nav>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8 py-3 sm:py-4 md:py-6">
+        <div className="bg-white rounded-lg shadow p-3 sm:p-4 md:p-6 mb-4 sm:mb-6">
+          {/* Mobile Filter Toggle and Search */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4 mb-3 sm:mb-4 lg:mb-0">
+            {/* Search - Always visible */}
+            <div className="flex-1 lg:max-w-md">
               <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
-              <input
-                type="text"
-                placeholder="Search incidents..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-
-            {/* Status Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">All Statuses</option>
-                <option value="pending">Pending</option>
-                <option value="in_progress">In Progress</option>
-                <option value="resolved">Resolved</option>
-                <option value="closed">Closed</option>
-              </select>
-            </div>
-
-            {/* Priority Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
-              <select
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">All Priorities</option>
-                <option value="low">Low</option>
-                <option value="moderate">Moderate</option>
-                <option value="high">High</option>
-                <option value="critical">Critical</option>
-              </select>
-            </div>
-
-            {/* Assignment Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Assignment</label>
-              <select
-                value={assignmentFilter}
-                onChange={(e) => setAssignmentFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option value="all">All Assignments</option>
-                <option value="individual">Individual</option>
-                <option value="team">Team</option>
-              </select>
-            </div>
-
-            {/* Results Count */}
-            <div className="flex items-end">
-              <div className="text-sm text-gray-600">
-                {filteredIncidents.length} of {incidents.length} incidents
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search incidents..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base"
+                />
+                <i className="ri-search-line absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
               </div>
+            </div>
+
+            {/* Mobile Filter Toggle Button */}
+            <div className="flex items-center justify-between lg:hidden">
+              <span className="text-sm text-gray-600">
+                {filteredIncidents.length} of {incidents.length} incidents
+              </span>
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="inline-flex items-center px-3 py-2.5 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+              >
+                <i className={`mr-2 ${showFilters ? "ri-filter-off-line" : "ri-filter-line"}`}></i>
+                {showFilters ? "Hide Filters" : "Show Filters"}
+              </button>
+            </div>
+
+            {/* Desktop Results Count */}
+            <div className="hidden lg:flex items-center text-sm text-gray-600">
+              {filteredIncidents.length} of {incidents.length} incidents
+            </div>
+          </div>
+
+          {/* Filters - Hidden on mobile unless toggled, always visible on desktop */}
+          <div className={`${showFilters ? "block" : "hidden"} lg:block`}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 pt-3 sm:pt-4 lg:pt-6 border-t border-gray-200 lg:border-t-0">
+              {/* Status Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base"
+                >
+                  <option value="all">All {viewMode === "active" ? "Active" : "History"} Statuses</option>
+                  {viewMode === "active" ? (
+                    <>
+                      <option value="pending">Pending</option>
+                      <option value="in_progress">In Progress</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="resolved">Resolved</option>
+                      <option value="closed">Closed</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              {/* Priority Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
+                <select
+                  value={priorityFilter}
+                  onChange={(e) => setPriorityFilter(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base"
+                >
+                  <option value="all">All Priorities</option>
+                  <option value="low">Low</option>
+                  <option value="moderate">Moderate</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
+              </div>
+
+             
             </div>
           </div>
         </div>
 
-        {/* Team Assignment Summary */}
-        {incidents.some(i => i.assignment_type === 'team') && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <i className="ri-team-line text-blue-600 text-xl"></i>
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-blue-900">Team Assignment Summary</h3>
-                  <p className="text-blue-700 text-sm">
-                    You have {incidents.filter(i => i.assignment_type === 'team').length} team-assigned incidents
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold text-blue-900">
-                  {incidents.filter(i => i.assignment_type === 'team').length}
-                </div>
-                <div className="text-blue-700 text-sm">Team Incidents</div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Incidents List */}
         <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Assigned Incidents</h3>
+          <div className="px-3 sm:px-4 md:px-6 py-3 md:py-4 border-b border-gray-200">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {viewMode === "active" ? "Active Incidents" : "Incident History"}
+              </h3>
               <div className="text-sm text-gray-500">
-                Showing {filteredIncidents.length} of {incidents.length} incidents
+                Showing {filteredIncidents.length} of{" "}
+                {viewMode === "active"
+                  ? incidents.filter((i) => i.status === "pending" || i.status === "in_progress").length
+                  : incidents.filter((i) => i.status === "resolved" || i.status === "closed").length}{" "}
+                {viewMode === "active" ? "active" : "resolved"} incidents
               </div>
             </div>
           </div>
-          {loading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-600">Loading incidents...</p>
-            </div>
-          ) : filteredIncidents.length === 0 ? (
-            <div className="text-center py-12">
-              <i className="ri-inbox-line text-4xl text-gray-400 mb-4"></i>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No incidents found</h3>
-              <p className="text-gray-600">
-                {incidents.length === 0 
-                  ? "You don't have any assigned incidents yet."
-                  : "No incidents match your current filters."
-                }
+          {filteredIncidents.length === 0 ? (
+            <div className="text-center py-8 sm:py-12 px-4">
+              <i
+                className={`text-3xl sm:text-4xl mb-3 sm:mb-4 ${
+                  viewMode === "active" ? "ri-inbox-line text-gray-400" : "ri-history-line text-green-400"
+                }`}
+              ></i>
+              <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">
+                {viewMode === "active" ? "No active incidents" : "No incident history"}
+              </h3>
+              <p className="text-sm sm:text-base text-gray-600 max-w-md mx-auto">
+                {viewMode === "active"
+                  ? incidents.filter((i) => i.status === "pending" || i.status === "in_progress").length === 0
+                    ? "You don't have any active incidents at the moment."
+                    : "No active incidents match your current filters."
+                  : incidents.filter((i) => i.status === "resolved" || i.status === "closed").length === 0
+                    ? "You haven't resolved any incidents yet."
+                    : "No resolved incidents match your current filters."}
               </p>
-              {incidents.length === 0 && (
-                <div className="mt-4">
-                  <div className="text-xs text-gray-400">
-                    <i className="ri-information-line mr-1"></i>
-                    Incidents will appear here when assigned to you or your team
+              {viewMode === "active" &&
+                incidents.filter((i) => i.status === "pending" || i.status === "in_progress").length === 0 && (
+                  <div className="mt-3 sm:mt-4">
+                    <div className="text-xs text-gray-400">
+                      <i className="ri-information-line mr-1"></i>
+                      Active incidents will appear here when assigned to you or your team
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
             </div>
-                      ) : (
-                        <>
-              {/* Card-based Layout (All Screen Sizes) */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 p-6">
+          ) : (
+            <>
+              {/* Card-based Layout for All Incidents */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4 md:gap-6 p-3 sm:p-4 md:p-6">
                 {filteredIncidents.map((incident) => (
-                  <div key={incident.incident_id} className={`bg-white rounded-lg shadow-sm border transition-shadow duration-200 ${
-                    incident.status === 'resolved' || incident.status === 'closed'
-                      ? 'border-green-200 bg-green-50'
-                      : 'border-gray-200 hover:shadow-md'
-                  }`}>
+                  <div
+                    key={incident.incident_id}
+                    className={`bg-white rounded-xl shadow-sm border transition-all duration-300 hover:shadow-lg ${
+                      incident.status === "resolved" || incident.status === "closed"
+                        ? "border-green-200 bg-green-50"
+                        : "border-gray-200 hover:border-blue-300"
+                    }`}
+                  >
                     {/* Header with Incident ID and Status */}
-                    <div className="p-4 border-b border-gray-100">
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center space-x-2">
-                          <div className={`w-2 h-2 rounded-full ${
-                            incident.status === 'resolved' || incident.status === 'closed'
-                              ? 'bg-green-500'
-                              : 'bg-blue-500'
-                          }`}></div>
-                          <span className="text-xs font-medium text-gray-500">#{incident.incident_id}</span>
-                          {(incident.status === 'resolved' || incident.status === 'closed') && (
-                            <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                              <i className="ri-check-line mr-1"></i>
-                              Completed
-                            </span>
-                          )}
+                    <div className="p-3 sm:p-4 border-b border-gray-100">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center space-x-2 sm:space-x-3">
+                          <div
+                            className={`w-3 h-3 rounded-full ${
+                              incident.status === "resolved" || incident.status === "closed"
+                                ? "bg-green-500"
+                                : incident.status === "in_progress"
+                                  ? "bg-blue-500"
+                                  : "bg-yellow-500"
+                            }`}
+                          ></div>
+                          <div>
+                            <span className="text-sm font-semibold text-gray-900">#{incident.incident_id}</span>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full border ${getPriorityColor(incident.priority_level)}`}>
+                        <div className="flex flex-col items-end space-y-1.5 sm:space-y-2">
+                          <span
+                            className={`inline-flex px-2 sm:px-3 py-1 text-xs font-semibold rounded-full border ${getPriorityColor(incident.priority_level)}`}
+                          >
+                            <i className="ri-flag-line mr-1"></i>
                             {incident.priority_level.charAt(0).toUpperCase() + incident.priority_level.slice(1)}
                           </span>
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full border ${getStatusColor(incident.status)}`}>
+                          <span
+                            className={`inline-flex px-2 sm:px-3 py-1 text-xs font-semibold rounded-full border ${getStatusColor(incident.status)}`}
+                          >
                             {getStatusText(incident.status)}
                           </span>
                         </div>
                       </div>
-                      
+
                       {/* Incident Type and Description */}
-                      <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                        {incident.incident_type}
-                      </h3>
-                      <p className="text-sm text-gray-600 overflow-hidden" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                        {incident.description}
-                      </p>
+                      <div>
+                        <h4 className="text-sm sm:text-base font-semibold text-gray-900 mb-2">
+                          {incident.incident_type}
+                        </h4>
+                        <p className="text-xs sm:text-sm text-gray-600 line-clamp-2 leading-relaxed">
+                          {incident.description}
+                        </p>
+                      </div>
                     </div>
 
                     {/* Content */}
-                    <div className="p-4 space-y-3">
+                    <div className="p-3 sm:p-4 space-y-3">
                       {/* Location */}
-                      <div className="flex items-start space-x-2">
-                        <i className="ri-map-pin-line text-gray-400 mt-0.5 flex-shrink-0"></i>
+                      <div className="flex items-start space-x-2 sm:space-x-3">
+                        <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                          <i className="ri-map-pin-line text-red-600 text-xs sm:text-sm"></i>
+                        </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-900 truncate">
+                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Location</div>
+                          <p className="text-xs sm:text-sm text-gray-900 break-words">
                             {geocodingInProgress[`${incident.latitude},${incident.longitude}`] ? (
                               <div className="flex items-center">
                                 <div className="animate-spin rounded-full h-3 w-3 border-b border-blue-600 mr-2"></div>
@@ -832,59 +921,87 @@ const StaffIncidentsPage: React.FC = () => {
                       </div>
 
                       {/* Assignment */}
-                      <div className="flex items-center space-x-2">
-                        <i className="ri-user-line text-gray-400 flex-shrink-0"></i>
-                        <div className="flex items-center space-x-2">
-                          {getAssignmentBadge(incident)}
-                          {incident.assigned_team_name && (
-                            <span className="text-xs text-gray-500">
-                              • {incident.assigned_team_name}
-                            </span>
-                          )}
-                          {incident.assigned_staff_name && (
-                            <span className="text-xs text-gray-500">
-                              • {incident.assigned_staff_name}
-                            </span>
-                          )}
+                      <div className="flex items-start space-x-2 sm:space-x-3">
+                        <div className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                          <i className="ri-team-line text-blue-600 text-xs sm:text-sm"></i>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                            Assignment
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                            {getAssignmentBadge(incident)}
+                            {incident.assigned_team_name && (
+                              <span className="text-xs sm:text-sm text-gray-700 font-medium break-words">
+                                {incident.assigned_team_name}
+                              </span>
+                            )}
+                            {incident.assigned_staff_name && (
+                              <span className="text-xs sm:text-sm text-gray-700 font-medium break-words">
+                                {incident.assigned_staff_name}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
                       {/* Date and Reporter */}
-                      <div className="flex items-center justify-between text-xs text-gray-500">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pt-2 border-t border-gray-100 space-y-2 sm:space-y-0">
                         <div className="flex items-center space-x-2">
-                          <i className="ri-time-line"></i>
-                          <span>{new Date(incident.date_reported).toLocaleDateString()}</span>
-                          <span>•</span>
-                          <span>{new Date(incident.date_reported).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                          <i className="ri-time-line text-gray-400"></i>
+                          <div className="text-xs text-gray-500">
+                            <div className="font-medium">{new Date(incident.date_reported).toLocaleDateString()}</div>
+                            <div>
+                              {new Date(incident.date_reported).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-1">
-                          <i className="ri-user-line"></i>
-                          <span>{incident.reporter_name}</span>
+                        <div className="flex items-center space-x-2">
+                          <i className="ri-user-line text-gray-400"></i>
+                          {incident.reporter_type === "guest" ? (
+                            <div className="text-xs text-gray-500">
+                              <div className="font-medium">{incident.guest_name || "Unknown Guest"}</div>
+                              <div className="text-gray-400">ID: {incident.guest_id || "N/A"}</div>
+                              {incident.guest_contact && (
+                                <div className="text-gray-400 break-all">📞 {incident.guest_contact}</div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-gray-500">
+                              <div className="font-medium">{incident.reporter_name}</div>
+                              {incident.reporter_phone && (
+                                <div className="text-gray-400 break-all">📞 {incident.reporter_phone}</div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
 
                     {/* Actions */}
-                    <div className="px-4 pb-4">
-                      <div className="flex space-x-2">
+                    <div className="px-3 sm:px-4 pb-3 sm:pb-4">
+                      <div className="flex flex-col space-y-2">
                         <button
                           onClick={() => openIncidentModal(incident)}
-                          className="flex-1 inline-flex items-center justify-center px-3 py-2 text-sm font-medium text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors"
+                          className="w-full inline-flex items-center justify-center px-3 py-2.5 text-sm font-medium text-blue-600 hover:text-blue-900 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors"
                         >
                           <i className="ri-eye-line mr-2"></i>
                           View Details
                         </button>
                         <button
                           onClick={() => openUpdateModal(incident)}
-                          disabled={incident.status === 'resolved' || incident.status === 'closed'}
-                          className={`flex-1 inline-flex items-center justify-center px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
-                            incident.status === 'resolved' || incident.status === 'closed'
-                              ? 'text-gray-400 bg-gray-100 border-gray-200 cursor-not-allowed'
-                              : 'text-green-600 hover:text-green-900 hover:bg-green-50 border-green-200'
+                          disabled={incident.status === "resolved" || incident.status === "closed"}
+                          className={`w-full inline-flex items-center justify-center px-3 py-2.5 text-sm font-medium rounded-lg border transition-colors ${
+                            incident.status === "resolved" || incident.status === "closed"
+                              ? "text-gray-400 bg-gray-100 border-gray-200 cursor-not-allowed"
+                              : "text-green-600 hover:text-green-900 hover:bg-green-50 border-green-200"
                           }`}
                         >
                           <i className="ri-edit-line mr-2"></i>
-                          {incident.status === 'resolved' || incident.status === 'closed' ? 'Completed' : 'Update'}
+                          {incident.status === "resolved" || incident.status === "closed" ? "Completed" : "Update"}
                         </button>
                       </div>
                     </div>
@@ -898,83 +1015,83 @@ const StaffIncidentsPage: React.FC = () => {
 
       {/* Incident Detail Modal */}
       {showIncidentModal && selectedIncident && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl">
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-xl max-w-[95vw] sm:max-w-[90vw] md:max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl">
             {/* Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 text-white">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-4 sm:px-6 py-3 sm:py-4 text-white">
               <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-white bg-opacity-20 rounded-lg flex items-center justify-center">
-                    <i className="ri-alert-line text-xl"></i>
+                <div className="flex items-center space-x-2 sm:space-x-3">
+                  <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white bg-opacity-20 rounded-lg flex items-center justify-center">
+                    <i className="ri-alert-line text-lg sm:text-xl"></i>
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold">
-                      Incident #{selectedIncident.incident_id}
-                    </h2>
-                    <p className="text-blue-100 text-sm">
-                      {selectedIncident.incident_type}
-                    </p>
+                    <h2 className="text-lg sm:text-xl font-bold">Incident #{selectedIncident.incident_id}</h2>
+                    <p className="text-blue-100 text-xs sm:text-sm">{selectedIncident.incident_type}</p>
                   </div>
                 </div>
                 <button
                   onClick={closeIncidentModal}
                   className="text-white hover:text-blue-100 transition-colors p-2 rounded-lg hover:bg-white hover:bg-opacity-20"
                 >
-                  <i className="ri-close-line text-xl"></i>
+                  <i className="ri-close-line text-lg sm:text-xl"></i>
                 </button>
               </div>
             </div>
 
             {/* Content */}
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="p-3 sm:p-4 md:p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
                 {/* Left Column */}
-                <div className="space-y-6">
+                <div className="space-y-4 sm:space-y-6">
                   {/* Description */}
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 rounded-lg p-3 md:p-4">
                     <div className="flex items-center space-x-2 mb-3">
                       <i className="ri-file-text-line text-blue-600"></i>
-                      <h3 className="font-semibold text-gray-900">Description</h3>
+                      <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Description</h3>
                     </div>
-                    <p className="text-gray-700 leading-relaxed">
-                      {selectedIncident.description}
-                    </p>
+                    <p className="text-gray-700 leading-relaxed text-sm sm:text-base">{selectedIncident.description}</p>
                   </div>
 
                   {/* Location */}
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 rounded-lg p-3 md:p-4">
                     <div className="flex items-center space-x-2 mb-3">
                       <i className="ri-map-pin-line text-red-600"></i>
-                      <h3 className="font-semibold text-gray-900">Location</h3>
+                      <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Location</h3>
                     </div>
-                    <p className="text-gray-700 mb-2">
+                    <p className="text-gray-700 mb-2 text-sm sm:text-base break-words">
                       {selectedIncident.resolvedLocation || selectedIncident.location}
                     </p>
-                    {selectedIncident.resolvedLocation && selectedIncident.resolvedLocation !== selectedIncident.location && (
-                      <p className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                        Coordinates: {Number(selectedIncident.latitude).toFixed(4)}, {Number(selectedIncident.longitude).toFixed(4)}
-                      </p>
-                    )}
+                    {selectedIncident.resolvedLocation &&
+                      selectedIncident.resolvedLocation !== selectedIncident.location && (
+                        <p className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded break-all">
+                          Coordinates: {Number(selectedIncident.latitude).toFixed(4)},{" "}
+                          {Number(selectedIncident.longitude).toFixed(4)}
+                        </p>
+                      )}
                   </div>
 
                   {/* Assignment */}
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 rounded-lg p-3 md:p-4">
                     <div className="flex items-center space-x-2 mb-3">
                       <i className="ri-team-line text-green-600"></i>
-                      <h3 className="font-semibold text-gray-900">Assignment</h3>
+                      <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Assignment</h3>
                     </div>
-                    <div className="flex items-center space-x-3">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                       {getAssignmentBadge(selectedIncident)}
                       {selectedIncident.assigned_team_name && (
                         <div className="flex items-center space-x-1">
                           <i className="ri-team-line text-gray-400"></i>
-                          <span className="text-sm text-gray-700">{selectedIncident.assigned_team_name}</span>
+                          <span className="text-xs sm:text-sm text-gray-700 break-words">
+                            {selectedIncident.assigned_team_name}
+                          </span>
                         </div>
                       )}
                       {selectedIncident.assigned_staff_name && (
                         <div className="flex items-center space-x-1">
                           <i className="ri-user-line text-gray-400"></i>
-                          <span className="text-sm text-gray-700">{selectedIncident.assigned_staff_name}</span>
+                          <span className="text-xs sm:text-sm text-gray-700 break-words">
+                            {selectedIncident.assigned_staff_name}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -982,67 +1099,116 @@ const StaffIncidentsPage: React.FC = () => {
                 </div>
 
                 {/* Right Column */}
-                <div className="space-y-6">
+                <div className="space-y-4 sm:space-y-6">
                   {/* Priority & Status */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3 md:gap-4">
+                    <div className="bg-gray-50 rounded-lg p-3 md:p-4">
                       <div className="flex items-center space-x-2 mb-3">
                         <i className="ri-flag-line text-orange-600"></i>
-                        <h3 className="font-semibold text-gray-900">Priority</h3>
+                        <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Priority</h3>
                       </div>
-                      <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full border ${getPriorityColor(selectedIncident.priority_level)}`}>
-                        {selectedIncident.priority_level.charAt(0).toUpperCase() + selectedIncident.priority_level.slice(1)}
+                      <span
+                        className={`inline-flex px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold rounded-full border ${getPriorityColor(selectedIncident.priority_level)}`}
+                      >
+                        {selectedIncident.priority_level.charAt(0).toUpperCase() +
+                          selectedIncident.priority_level.slice(1)}
                       </span>
                     </div>
 
-                    <div className="bg-gray-50 rounded-lg p-4">
+                    <div className="bg-gray-50 rounded-lg p-3 md:p-4">
                       <div className="flex items-center space-x-2 mb-3">
                         <i className="ri-time-line text-purple-600"></i>
-                        <h3 className="font-semibold text-gray-900">Status</h3>
+                        <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Status</h3>
                       </div>
-                      <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full border ${getStatusColor(selectedIncident.status)}`}>
+                      <span
+                        className={`inline-flex px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold rounded-full border ${getStatusColor(selectedIncident.status)}`}
+                      >
                         {getStatusText(selectedIncident.status)}
                       </span>
                     </div>
                   </div>
 
                   {/* Reporter */}
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 rounded-lg p-3 md:p-4">
                     <div className="flex items-center space-x-2 mb-3">
                       <i className="ri-user-line text-indigo-600"></i>
-                      <h3 className="font-semibold text-gray-900">Reporter</h3>
+                      <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Reporter</h3>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
-                        <i className="ri-user-line text-indigo-600 text-sm"></i>
+                    {selectedIncident.reporter_type === "guest" ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-6 h-6 sm:w-8 sm:h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                            <i className="ri-user-line text-indigo-600 text-xs sm:text-sm"></i>
+                          </div>
+                          <div>
+                            <div className="text-xs sm:text-sm font-medium text-gray-900">
+                              {selectedIncident.guest_name || "Unknown Guest"}
+                            </div>
+                            <div className="text-xs text-gray-500">Guest Reporter</div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mt-3 pt-3 border-t border-gray-200">
+                          <div>
+                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Guest ID</div>
+                            <div className="text-xs sm:text-sm text-gray-900">{selectedIncident.guest_id || "N/A"}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Incident ID</div>
+                            <div className="text-xs sm:text-sm text-gray-900">{selectedIncident.incident_id}</div>
+                          </div>
+                          <div className="col-span-1 sm:col-span-2">
+                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Contact</div>
+                            <div className="text-xs sm:text-sm text-gray-900 break-all">
+                              {selectedIncident.guest_contact || "N/A"}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <span className="text-gray-700">{selectedIncident.reporter_name}</span>
-                    </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-6 h-6 sm:w-8 sm:h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                            <i className="ri-user-line text-indigo-600 text-xs sm:text-sm"></i>
+                          </div>
+                          <div className="text-gray-700 font-medium text-sm sm:text-base">
+                            {selectedIncident.reporter_name}
+                          </div>
+                        </div>
+                        {selectedIncident.reporter_phone && (
+                          <div className="text-xs sm:text-sm text-gray-500 pl-8 sm:pl-10 break-all">
+                            📞 {selectedIncident.reporter_phone}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Dates */}
-                  <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="bg-gray-50 rounded-lg p-3 md:p-4">
                     <div className="flex items-center space-x-2 mb-3">
                       <i className="ri-calendar-line text-gray-600"></i>
-                      <h3 className="font-semibold text-gray-900">Timeline</h3>
+                      <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Timeline</h3>
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">Reported:</span>
-                        <span className="text-sm font-medium text-gray-900">
+                        <span className="text-xs sm:text-sm text-gray-600">Reported:</span>
+                        <span className="text-xs sm:text-sm font-medium text-gray-900">
                           {new Date(selectedIncident.date_reported).toLocaleDateString()}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-gray-600">Time:</span>
-                        <span className="text-sm font-medium text-gray-900">
-                          {new Date(selectedIncident.date_reported).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        <span className="text-xs sm:text-sm text-gray-600">Time:</span>
+                        <span className="text-xs sm:text-sm font-medium text-gray-900">
+                          {new Date(selectedIncident.date_reported).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
                         </span>
                       </div>
                       {selectedIncident.date_resolved && (
                         <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-                          <span className="text-sm text-gray-600">Resolved:</span>
-                          <span className="text-sm font-medium text-green-600">
+                          <span className="text-xs sm:text-sm text-gray-600">Resolved:</span>
+                          <span className="text-xs sm:text-sm font-medium text-green-600">
                             {new Date(selectedIncident.date_resolved).toLocaleDateString()}
                           </span>
                         </div>
@@ -1051,29 +1217,61 @@ const StaffIncidentsPage: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Attachments */}
+              {selectedIncident.attachment && (
+                <div className="bg-gray-50 rounded-lg p-3 md:p-4 mt-4 md:mt-6">
+                  <h3 className="font-semibold text-gray-900 mb-3 text-sm sm:text-base">Attachments</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
+                    {selectedIncident.attachment.split(",").map((filename, index) => {
+                      const url = `/uploads/incidents/${filename.trim()}`
+                      return (
+                        <a
+                          key={index}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block border border-gray-300 rounded-lg overflow-hidden hover:shadow-lg transition-shadow"
+                        >
+                          <img
+                            src={url || "/placeholder.svg"}
+                            alt={`Attachment ${index + 1}`}
+                            className="w-full h-20 sm:h-24 md:h-32 object-cover"
+                            onError={(e) => {
+                              ;(e.target as HTMLImageElement).src = "/images/placeholder-image.png"
+                            }}
+                          />
+                        </a>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Footer */}
-            <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
-              <div className="flex justify-end space-x-3">
+            <div className="bg-gray-50 px-3 sm:px-4 md:px-6 py-3 md:py-4 border-t border-gray-200">
+              <div className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
                 <button
                   onClick={() => {
-                    closeIncidentModal();
-                    openUpdateModal(selectedIncident);
+                    closeIncidentModal()
+                    openUpdateModal(selectedIncident)
                   }}
-                  disabled={selectedIncident.status === 'resolved' || selectedIncident.status === 'closed'}
-                  className={`inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    selectedIncident.status === 'resolved' || selectedIncident.status === 'closed'
-                      ? 'bg-gray-400 text-white cursor-not-allowed'
-                      : 'bg-green-600 text-white hover:bg-green-700'
+                  disabled={selectedIncident.status === "resolved" || selectedIncident.status === "closed"}
+                  className={`w-full sm:w-auto inline-flex items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    selectedIncident.status === "resolved" || selectedIncident.status === "closed"
+                      ? "bg-gray-400 text-white cursor-not-allowed"
+                      : "bg-green-600 text-white hover:bg-green-700"
                   }`}
                 >
                   <i className="ri-edit-line mr-2"></i>
-                  {selectedIncident.status === 'resolved' || selectedIncident.status === 'closed' ? 'Incident Completed' : 'Update Incident'}
+                  {selectedIncident.status === "resolved" || selectedIncident.status === "closed"
+                    ? "Incident Completed"
+                    : "Update Incident"}
                 </button>
                 <button
                   onClick={closeIncidentModal}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+                  className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
                 >
                   <i className="ri-close-line mr-2"></i>
                   Close
@@ -1086,17 +1284,14 @@ const StaffIncidentsPage: React.FC = () => {
 
       {/* Assignment Modal */}
       {showAssignmentModal && selectedIncident && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-md w-full">
-            <div className="p-6">
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-lg max-w-[95vw] sm:max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-4 md:p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
                   Reassign Incident #{selectedIncident.incident_id}
                 </h2>
-                <button
-                  onClick={closeAssignmentModal}
-                  className="text-gray-400 hover:text-gray-600"
-                >
+                <button onClick={closeAssignmentModal} className="text-gray-400 hover:text-gray-600 p-1">
                   <i className="ri-close-line text-xl"></i>
                 </button>
               </div>
@@ -1109,8 +1304,8 @@ const StaffIncidentsPage: React.FC = () => {
                       <input
                         type="radio"
                         value="team"
-                        checked={assignmentType === 'team'}
-                        onChange={(e) => setAssignmentType(e.target.value as 'team' | 'staff')}
+                        checked={assignmentType === "team"}
+                        onChange={(e) => setAssignmentType(e.target.value as "team" | "staff")}
                         className="mr-2"
                       />
                       <span className="text-sm text-gray-700">Team Assignment</span>
@@ -1119,8 +1314,8 @@ const StaffIncidentsPage: React.FC = () => {
                       <input
                         type="radio"
                         value="staff"
-                        checked={assignmentType === 'staff'}
-                        onChange={(e) => setAssignmentType(e.target.value as 'team' | 'staff')}
+                        checked={assignmentType === "staff"}
+                        onChange={(e) => setAssignmentType(e.target.value as "team" | "staff")}
                         className="mr-2"
                       />
                       <span className="text-sm text-gray-700">Individual Staff Assignment</span>
@@ -1128,16 +1323,16 @@ const StaffIncidentsPage: React.FC = () => {
                   </div>
                 </div>
 
-                {assignmentType === 'team' && (
+                {assignmentType === "team" && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Select Team</label>
                     <select
-                      value={selectedTeamId || ''}
+                      value={selectedTeamId || ""}
                       onChange={(e) => setSelectedTeamId(e.target.value ? Number(e.target.value) : null)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base"
                     >
                       <option value="">Clear Assignment</option>
-                      {teams.map(team => (
+                      {teams.map((team) => (
                         <option key={team.id} value={team.id}>
                           {team.name} ({team.member_count} members)
                         </option>
@@ -1146,16 +1341,16 @@ const StaffIncidentsPage: React.FC = () => {
                   </div>
                 )}
 
-                {assignmentType === 'staff' && (
+                {assignmentType === "staff" && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Select Staff</label>
                     <select
-                      value={selectedStaffId || ''}
+                      value={selectedStaffId || ""}
                       onChange={(e) => setSelectedStaffId(e.target.value ? Number(e.target.value) : null)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base"
                     >
                       <option value="">Clear Assignment</option>
-                      {availableStaff.map(staff => (
+                      {availableStaff.map((staff) => (
                         <option key={staff.id} value={staff.id}>
                           {staff.name} - {staff.position}
                         </option>
@@ -1165,15 +1360,17 @@ const StaffIncidentsPage: React.FC = () => {
                 )}
 
                 {emailStatus && (
-                  <div className={`p-3 rounded-md ${
-                    emailStatus.sent 
-                      ? 'bg-green-50 border border-green-200 text-green-800' 
-                      : 'bg-red-50 border border-red-200 text-red-800'
-                  }`}>
+                  <div
+                    className={`p-3 rounded-md ${
+                      emailStatus.sent
+                        ? "bg-green-50 border border-green-200 text-green-800"
+                        : "bg-red-50 border border-red-200 text-red-800"
+                    }`}
+                  >
                     <div className="flex items-center">
-                      <i className={`mr-2 ${emailStatus.sent ? 'ri-check-line' : 'ri-error-warning-line'}`}></i>
+                      <i className={`mr-2 ${emailStatus.sent ? "ri-check-line" : "ri-error-warning-line"}`}></i>
                       <span className="text-sm font-medium">
-                        {emailStatus.sent ? 'Email notifications sent successfully' : 'Email notifications failed'}
+                        {emailStatus.sent ? "Email notifications sent successfully" : "Email notifications failed"}
                       </span>
                     </div>
                     {emailStatus.details && (
@@ -1189,29 +1386,29 @@ const StaffIncidentsPage: React.FC = () => {
                 )}
               </div>
 
-              <div className="mt-6 flex justify-end space-x-3">
+              <div className="mt-6 flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
                 <button
                   onClick={closeAssignmentModal}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="w-full sm:w-auto px-4 py-2.5 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
                   disabled={isAssigning}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => {
-                    if (!selectedIncident) return;
-                    
-                    if (assignmentType === 'team') {
-                      handleAssignTeam(selectedIncident.incident_id, selectedTeamId);
+                    if (!selectedIncident) return
+
+                    if (assignmentType === "team") {
+                      handleAssignTeam(selectedIncident.incident_id, selectedTeamId)
                     } else {
-                      handleAssignStaff(selectedIncident.incident_id, selectedStaffId);
+                      handleAssignStaff(selectedIncident.incident_id, selectedStaffId)
                     }
                   }}
                   disabled={isAssigning}
-                  className={`px-4 py-2 rounded-lg transition-colors flex items-center ${
+                  className={`w-full sm:w-auto px-4 py-2.5 rounded-lg transition-colors flex items-center justify-center text-sm font-medium ${
                     isAssigning
-                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                      ? "bg-gray-400 text-gray-200 cursor-not-allowed"
+                      : "bg-blue-600 text-white hover:bg-blue-700"
                   }`}
                 >
                   {isAssigning ? (
@@ -1220,7 +1417,7 @@ const StaffIncidentsPage: React.FC = () => {
                       Assigning...
                     </>
                   ) : (
-                    'Assign'
+                    "Assign"
                   )}
                 </button>
               </div>
@@ -1231,17 +1428,14 @@ const StaffIncidentsPage: React.FC = () => {
 
       {/* Update Incident Modal */}
       {showUpdateModal && selectedIncident && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg max-w-md w-full">
-            <div className="p-6">
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-lg max-w-[95vw] sm:max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-4 md:p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900">
                   Update Incident #{selectedIncident.incident_id}
                 </h2>
-                <button
-                  onClick={closeUpdateModal}
-                  className="text-gray-400 hover:text-gray-600"
-                >
+                <button onClick={closeUpdateModal} className="text-gray-400 hover:text-gray-600 p-1">
                   <i className="ri-close-line text-xl"></i>
                 </button>
               </div>
@@ -1250,7 +1444,9 @@ const StaffIncidentsPage: React.FC = () => {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Current Status</label>
                   <div className="text-sm text-gray-900 mb-2">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full border ${getStatusColor(selectedIncident.status)}`}>
+                    <span
+                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full border ${getStatusColor(selectedIncident.status)}`}
+                    >
                       {getStatusText(selectedIncident.status)}
                     </span>
                   </div>
@@ -1261,45 +1457,33 @@ const StaffIncidentsPage: React.FC = () => {
                   <select
                     value={updateStatus}
                     onChange={(e) => setUpdateStatus(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base"
                   >
-                    <option value="pending">Pending</option>
                     <option value="in_progress">In Progress</option>
                     <option value="resolved">Resolved</option>
                     <option value="closed">Closed</option>
                   </select>
                 </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Notes (Optional)</label>
-                  <textarea
-                    value={updateNotes}
-                    onChange={(e) => setUpdateNotes(e.target.value)}
-                    placeholder="Add any notes about this update..."
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
               </div>
 
-              <div className="mt-6 flex justify-end space-x-3">
+              <div className="mt-6 flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
                 <button
                   onClick={closeUpdateModal}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="w-full sm:w-auto px-4 py-2.5 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium"
                   disabled={isUpdating}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => {
-                    if (!selectedIncident) return;
-                    handleUpdateIncident(selectedIncident.incident_id, updateStatus, updateNotes);
+                    if (!selectedIncident) return
+                    handleUpdateIncident(selectedIncident.incident_id, updateStatus, updateNotes)
                   }}
                   disabled={isUpdating || !updateStatus}
-                  className={`px-4 py-2 rounded-lg transition-colors flex items-center ${
+                  className={`w-full sm:w-auto px-4 py-2.5 rounded-lg transition-colors flex items-center justify-center text-sm font-medium ${
                     isUpdating || !updateStatus
-                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
-                      : 'bg-green-600 text-white hover:bg-green-700'
+                      ? "bg-gray-400 text-gray-200 cursor-not-allowed"
+                      : "bg-green-600 text-white hover:bg-green-700"
                   }`}
                 >
                   {isUpdating ? (
@@ -1308,7 +1492,7 @@ const StaffIncidentsPage: React.FC = () => {
                       Updating...
                     </>
                   ) : (
-                    'Update Incident'
+                    "Update Incident"
                   )}
                 </button>
               </div>
@@ -1317,32 +1501,52 @@ const StaffIncidentsPage: React.FC = () => {
         </div>
       )}
 
+      {/* Export Preview Modal */}
+      <ExportPreviewModal
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        onExportPDF={handleExportPDF}
+        onExportCSV={handleExportCSV}
+        onExportExcel={handleExportExcel}
+        data={filteredIncidents}
+        columns={exportColumns.map((col) => ({ key: col.key, label: col.label }))}
+        title="Export Staff Incidents"
+      />
+
       {/* Notifications */}
-      <div className="fixed top-4 right-4 z-50 space-y-2">
-        {notifications.map(notification => (
+      <div className="fixed top-4 right-3 sm:right-4 z-50 space-y-2 max-w-[calc(100vw-24px)] sm:max-w-sm">
+        {notifications.map((notification) => (
           <div
             key={notification.id}
-            className={`px-4 py-3 rounded-lg shadow-lg max-w-sm transform transition-all duration-300 ${
-              notification.type === 'success' ? 'bg-green-500 text-white' :
-              notification.type === 'error' ? 'bg-red-500 text-white' :
-              notification.type === 'warning' ? 'bg-yellow-500 text-white' :
-              'bg-blue-500 text-white'
+            className={`px-3 sm:px-4 py-2 sm:py-3 rounded-lg shadow-lg transform transition-all duration-300 ${
+              notification.type === "success"
+                ? "bg-green-500 text-white"
+                : notification.type === "error"
+                  ? "bg-red-500 text-white"
+                  : notification.type === "warning"
+                    ? "bg-yellow-500 text-white"
+                    : "bg-blue-500 text-white"
             }`}
           >
             <div className="flex items-center">
-              <i className={`mr-2 ${
-                notification.type === 'success' ? 'ri-check-line' :
-                notification.type === 'error' ? 'ri-error-warning-line' :
-                notification.type === 'warning' ? 'ri-alert-line' :
-                'ri-information-line'
-              }`}></i>
-              <span className="text-sm font-medium">{notification.message}</span>
+              <i
+                className={`mr-2 ${
+                  notification.type === "success"
+                    ? "ri-check-line"
+                    : notification.type === "error"
+                      ? "ri-error-warning-line"
+                      : notification.type === "warning"
+                        ? "ri-alert-line"
+                        : "ri-information-line"
+                }`}
+              ></i>
+              <span className="text-xs sm:text-sm font-medium break-words">{notification.message}</span>
             </div>
           </div>
         ))}
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default StaffIncidentsPage;
+export default StaffIncidentsPage

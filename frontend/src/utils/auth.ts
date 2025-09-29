@@ -29,6 +29,9 @@ export interface UserData {
   status?: number | string; // Can be number or string
   // Team assignment fields
   assigned_team_id?: number;
+  // Staff-specific fields
+  position?: string;
+  department?: string;
 }
 
 export interface AuthState {

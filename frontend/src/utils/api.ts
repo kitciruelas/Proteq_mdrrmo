@@ -133,7 +133,6 @@ const createHeaders = (): HeadersInit => {
     headers['Authorization'] = `Bearer ${token}`;
     console.log('Authorization header set with token');
   } else {
-    console.warn('No token available for API request');
   }
   
   return headers;
@@ -418,7 +417,21 @@ export const adminDashboardApi = {
   },
   
   getOverview: async () => {
-    return apiRequest('/admin/dashboard/overview');
+    return apiRequest<{
+      success: boolean;
+      overview: {
+        userTypeDistribution: Array<{ user_type: string; user_count: number }>;
+        incidentTypes: Array<{ incident_type: string; count: number }>;
+        alertTypes: Array<{ alert_type: string; count: number }>;
+        evacuationCenters: {
+          total_centers: number;
+          open_centers: number;
+          full_centers: number;
+          total_capacity: number;
+          total_occupancy: number;
+        };
+      };
+    }>('/admin/dashboard/overview');
   },
 
   getAnalytics: async () => {
@@ -429,20 +442,73 @@ export const adminDashboardApi = {
         userTrends90Days: Array<{ date: string; count: number }>;
         incidentStatus: Array<{ status: string; count: number }>;
         incidentPriority: Array<{ priority: string; count: number }>;
-        evacuationOccupancy: Array<{ 
-          name: string; 
-          capacity: number; 
-          current_occupancy: number; 
-          occupancy_rate: number 
+        evacuationOccupancy: Array<{
+          name: string;
+          capacity: number;
+          current_occupancy: number;
+          occupancy_rate: number
         }>;
-        monthlyIncidents: Array<{ 
-          month: string; 
-          total_incidents: number; 
-          resolved_incidents: number; 
-          high_priority_incidents: number 
+        monthlyIncidents: Array<{
+          month: string;
+          total_incidents: number;
+          resolved_incidents: number;
+          high_priority_incidents: number
+        }>;
+        peakHours: Array<{
+          hour: number;
+          incident_count: number;
         }>;
       };
     }>('/admin/dashboard/analytics');
+  },
+
+  getLocationIncidents: async () => {
+    return apiRequest<{
+      success: boolean;
+      locationIncidents: Array<{
+        name: string;
+        [key: string]: string | number;
+      }>;
+      note?: string;
+    }>('/admin/dashboard/location-incidents');
+  },
+
+  getSeasonalPatterns: async () => {
+    return apiRequest<{
+      success: boolean;
+      seasonalData: Array<{
+        period: string;
+        floods?: number;
+        fires?: number;
+        accidents?: number;
+        otherIncidents?: number;
+        allIncidents?: number;
+        total: number;
+      }>;
+      analysis: {
+        rainySeason: { floods: number; otherIncidents: number; total: number };
+        summerSeason: { fires: number; otherIncidents: number; total: number };
+        holidayPeriods: { accidents: number; otherIncidents: number; total: number };
+        regularPeriods: { allIncidents: number; total: number };
+      };
+      note?: string;
+      totalIncidentsAnalyzed: number;
+    }>('/admin/dashboard/seasonal-patterns');
+  },
+
+  getMonthlyTrends: async (period: 'days' | 'weeks' | 'months' = 'months', limit: number = 12) => {
+    return apiRequest<{
+      success: boolean;
+      trendsData: Array<{
+        period: string;
+        total_incidents: number;
+        resolved_incidents: number;
+        high_priority_incidents: number;
+      }>;
+      period: string;
+      limit: number;
+      note?: string;
+    }>(`/admin/dashboard/monthly-trends?period=${period}&limit=${limit}`);
   },
 };
 
@@ -522,6 +588,13 @@ export const staffManagementApi = {
     return apiRequest(`/staff/${id}`, {
       method: 'PUT',
       body: JSON.stringify(staffData),
+    });
+  },
+
+  updateStaffAvailability: async (id: number, availability: 'available' | 'busy' | 'off-duty') => {
+    return apiRequest(`/staff/${id}/availability`, {
+      method: 'PUT',
+      body: JSON.stringify({ availability }),
     });
   },
   
@@ -838,6 +911,78 @@ export const profileApi = {
       body: JSON.stringify(profileData),
     });
   },
+
+  // Change user password
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+    }>('/profile/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  },
+};
+
+// Feedback API
+export const feedbackApi = {
+  // Submit feedback
+  submitFeedback: async (data: { message: string; rating?: number | null }) => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+      feedbackId: number;
+    }>('/feedback/submit', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Get feedback (admin/staff only)
+  getFeedback: async (params: PaginationParams = {}) => {
+    const queryString = new URLSearchParams(
+      Object.entries(params).reduce((acc, [key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          acc[key] = String(value);
+        }
+        return acc;
+      }, {} as Record<string, string>)
+    ).toString();
+
+    return apiRequest<{
+      success: boolean;
+      feedback: Array<{
+        id: number;
+        message: string;
+        rating: number | null;
+        created_at: string;
+        updated_at: string;
+        user_info: {
+          id: number;
+          name: string;
+          email: string;
+          type: 'user' | 'staff' | 'admin';
+        };
+      }>;
+      pagination: {
+        currentPage: number;
+        totalPages: number;
+        totalItems: number;
+        itemsPerPage: number;
+      };
+    }>(`/feedback?${queryString}`);
+  },
+
+  // Update feedback status (admin/staff only)
+  updateFeedbackStatus: async (id: number, status: 'pending' | 'reviewed' | 'resolved') => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+    }>(`/feedback/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  },
 };
 
 // Public API (no authentication required)
@@ -852,6 +997,21 @@ export const publicApi = {
         totalIncidents: number;
       };
     }>('/public/stats');
+  },
+
+  getTestimonials: async (limit?: number) => {
+    const queryString = limit ? `?limit=${limit}` : '';
+    return apiRequest<{
+      success: boolean;
+      testimonials: Array<{
+        id: number;
+        quote: string;
+        rating: number;
+        name: string;
+        type: string;
+        created_at: string;
+      }>;
+    }>(`/public/testimonials${queryString}`);
   },
 };
 
@@ -879,6 +1039,23 @@ export const safetyProtocolsApi = {
   },
   deleteProtocol: async (protocolId: number) => {
     return apiRequest<{ success: boolean }>(`/safety-protocols/${protocolId}`, { method: 'DELETE' });
+  },
+};
+
+// Staff Dashboard API
+export const staffDashboardApi = {
+  getStats: async () => {
+    return apiRequest<{
+      success: boolean;
+      stats: {
+        totalIncidents: number;
+        pendingIncidents: number;
+        inProgressIncidents: number;
+        resolvedIncidents: number;
+        criticalIncidents: number;
+        highPriorityIncidents: number;
+      };
+    }>('/staff/dashboard/stats');
   },
 };
 
@@ -1045,5 +1222,6 @@ export default {
   incidentsApi,
   safetyProtocolsApi,
   profileApi,
+  feedbackApi,
   routingApi,
 };

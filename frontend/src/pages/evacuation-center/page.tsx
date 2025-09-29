@@ -63,6 +63,7 @@ const EvacuationCenterPage: React.FC = () => {
   const [selectedGallery, setSelectedGallery] = useState<{ center: EvacuationCenter; resources: EvacuationResource[] } | null>(null);
   const [selectedContactInfo, setSelectedContactInfo] = useState<EvacuationCenter | null>(null);
   const [selectedCenterDetails, setSelectedCenterDetails] = useState<EvacuationCenter | null>(null);
+  const [showAllCenters, setShowAllCenters] = useState(false);
 
   // Get user location
   const { latitude, longitude, error: locationError, loading: locationLoading, getCurrentLocation } = useGeolocation();
@@ -223,7 +224,7 @@ const EvacuationCenterPage: React.FC = () => {
       cleanPicture = cleanPicture.slice(8); // Remove 'uploads/' prefix
     }
     
-    const imageUrl = `http://localhost:5000/uploads/${cleanPicture}`;
+    const imageUrl = `/uploads/${cleanPicture}`;
     console.log(`Image URL generated: ${imageUrl} (from: ${picture})`);
     return imageUrl;
   };
@@ -318,13 +319,16 @@ const EvacuationCenterPage: React.FC = () => {
   // Filter evacuation centers based on search and status
   const filteredCenters = evacuationCenters.filter(center => {
     const matchesSearch = searchQuery === '' ||
-      center.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      center.contact_person.toLowerCase().includes(searchQuery.toLowerCase());
+      center.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      center.contact_person?.toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesStatus = statusFilter === 'all' || center.status === statusFilter;
 
     return matchesSearch && matchesStatus;
   });
+
+  // Limit displayed centers to 8 initially, with option to show more
+  const displayedCenters = showAllCenters ? filteredCenters : filteredCenters.slice(0, 8);
 
   if (isLoading) {
     return (
@@ -533,7 +537,7 @@ const EvacuationCenterPage: React.FC = () => {
                 {/* Results Summary */}
                 <div className="mt-4 flex items-center justify-between text-sm">
                   <div className="text-gray-600">
-                    Showing <span className="font-semibold text-blue-600">{filteredCenters.length}</span> of{' '}
+                    Showing <span className="font-semibold text-blue-600">{displayedCenters.length}</span> of{' '}
                     <span className="font-semibold">{evacuationCenters.length}</span> centers
                     {searchQuery && (
                       <span className="ml-2 text-blue-600">
@@ -736,8 +740,8 @@ const EvacuationCenterPage: React.FC = () => {
                 <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-6">
                   <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
-                        <i className="ri-map-pin-line text-white text-lg"></i>
+                      <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
+                        <i className="ri-map-pin-line text-white text-base"></i>
                       </div>
                       <div>
                         <h3 className="text-xl font-bold text-gray-900">Nearby Centers</h3>
@@ -753,7 +757,7 @@ const EvacuationCenterPage: React.FC = () => {
                     {nearbyCenters.map((center, index) => (
                       <div
                         key={center.center_id}
-                        className="group bg-white border border-gray-200 rounded-xl p-4 hover:shadow-lg hover:border-blue-300 transition-all duration-300 hover:-translate-y-1"
+                        className="group bg-white border border-gray-200 rounded-xl px-2 py-3 hover:shadow-lg hover:border-blue-300 transition-all duration-300 hover:-translate-y-1"
                         style={{ animationDelay: `${index * 100}ms` }}
                       >
                         <div className="flex items-start justify-between mb-3">
@@ -763,9 +767,9 @@ const EvacuationCenterPage: React.FC = () => {
                               center.status === 'full' ? 'bg-red-500' :
                               'bg-gray-500'
                             }`}></div>
-                            <h4 className="font-semibold text-gray-900 text-sm group-hover:text-blue-600 transition-colors">
-                              {center.name}
-                            </h4>
+                        <h4 className="font-semibold text-gray-900 text-sm group-hover:text-blue-600 transition-colors truncate">
+                          {center.name}
+                        </h4>
                           </div>
                           <span className={`px-2 py-1 rounded-lg text-xs font-medium ${
                             center.status === 'open' ? 'bg-green-100 text-green-700' :
@@ -939,8 +943,8 @@ const EvacuationCenterPage: React.FC = () => {
           ) : (
             <div>
               {/* Enhanced List View */}
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredCenters.map((center, index) => {
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 px-4 sm:px-6 lg:px-8">
+              {displayedCenters.map((center, index) => {
                 const distance = userLocation
                   ? calculateDistance(userLocation.latitude, userLocation.longitude, center.latitude, center.longitude)
                   : null;
@@ -950,7 +954,7 @@ const EvacuationCenterPage: React.FC = () => {
                 return (
                   <div
                     key={center.center_id}
-                    className={`group relative bg-white/90 backdrop-blur-sm border rounded-xl shadow-lg p-4 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 ${
+                    className={`group relative bg-white/90 backdrop-blur-sm border rounded-xl shadow-lg px-1 py-3 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 ${
                       isNearby
                         ? 'border-blue-300 ring-1 ring-blue-100 bg-gradient-to-br from-blue-50/50 to-white'
                         : 'border-white/20 hover:border-blue-200'
@@ -971,15 +975,15 @@ const EvacuationCenterPage: React.FC = () => {
                     {/* Header */}
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex items-center space-x-3">
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-md ${
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-md ${
                           center.status === 'open' ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
                           center.status === 'full' ? 'bg-gradient-to-r from-red-500 to-rose-500' :
                           'bg-gradient-to-r from-gray-500 to-slate-500'
                         }`}>
-                          <i className="ri-building-2-line text-xl text-white"></i>
+                          <i className="ri-building-2-line text-lg text-white"></i>
                         </div>
                         <div>
-                          <h3 className="text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors">
+                          <h3 className="text-base font-bold text-gray-900 group-hover:text-blue-600 transition-colors truncate">
                             {center.name}
                           </h3>
                           <p className="text-gray-500 text-sm">Emergency Facility</p>
@@ -1036,23 +1040,23 @@ const EvacuationCenterPage: React.FC = () => {
 
                     {/* Simple Contact Information */}
                     <div className="mb-4">
-                      <div className="space-y-3">
+                      <div className="space-y-2">
                         <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <i className="ri-user-line text-blue-600 text-sm"></i>
+                          <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center">
+                            <i className="ri-user-line text-blue-600 text-xs"></i>
                           </div>
                           <div>
-                            <p className="text-sm font-medium text-gray-900">{center.contact_person}</p>
+                            <p className="text-sm font-medium text-gray-900 truncate">{center.contact_person}</p>
                             <p className="text-xs text-gray-500">Contact Person</p>
                           </div>
                         </div>
 
                         <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                            <i className="ri-phone-line text-green-600 text-sm"></i>
+                          <div className="w-6 h-6 bg-green-100 rounded-lg flex items-center justify-center">
+                            <i className="ri-phone-line text-green-600 text-xs"></i>
                           </div>
                           <div>
-                            <p className="text-sm font-medium text-gray-900">{center.contact_number}</p>
+                            <p className="text-sm font-medium text-gray-900 truncate">{center.contact_number}</p>
                             <p className="text-xs text-gray-500">Phone Number</p>
                           </div>
                         </div>
@@ -1157,6 +1161,18 @@ const EvacuationCenterPage: React.FC = () => {
                 );
               })}
             </div>
+            {/* Show More / Show Less Button */}
+            {filteredCenters.length > 8 && (
+              <div className="flex justify-center mt-6">
+                <button
+                  onClick={() => setShowAllCenters(!showAllCenters)}
+                  className="px-6 py-3 rounded-xl font-semibold  transition-colors flex items-center space-x-2"
+                >
+                  <i className={`x-${showAllCenters ? 'up' : 'down'}-line`}></i>
+                  <span>{showAllCenters ? 'Show Less' : 'Show More'}</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
         </>

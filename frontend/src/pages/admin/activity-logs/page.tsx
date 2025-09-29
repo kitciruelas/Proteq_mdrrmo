@@ -3,6 +3,7 @@ import { activityLogsApi } from '../../../utils/api';
 import ExportPreviewModal from '../../../components/base/ExportPreviewModal';
 import type { ExportColumn } from '../../../utils/exportUtils';
 import ExportUtils from '../../../utils/exportUtils';
+import { useToast } from '../../../components/base/Toast';
 
 interface ActivityLog {
   id: number;
@@ -61,6 +62,7 @@ const exportColumns: ExportColumn[] = [
 ];
 
 const ActivityLogs: React.FC = () => {
+  const { showToast } = useToast();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -171,6 +173,67 @@ const ActivityLogs: React.FC = () => {
     }
   };
 
+  const fetchAllActivityLogs = async () => {
+    try {
+      const params: any = {
+        limit: 1000000 // Very high limit to get all logs
+      };
+
+      if (userTypeFilter !== 'all') {
+        params.user_type = userTypeFilter;
+      }
+
+      if (actionFilter !== 'all') {
+        params.action = actionFilter;
+      }
+
+      if (dateFilter !== 'all') {
+        const now = new Date();
+        switch (dateFilter) {
+          case 'today':
+            params.date_from = now.toISOString().split('T')[0];
+            params.date_to = now.toISOString().split('T')[0];
+            break;
+          case 'week':
+            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            params.date_from = weekAgo.toISOString().split('T')[0];
+            params.date_to = now.toISOString().split('T')[0];
+            break;
+          case 'month':
+            const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            params.date_from = monthAgo.toISOString().split('T')[0];
+            params.date_to = now.toISOString().split('T')[0];
+            break;
+        }
+      }
+
+      console.log('🔍 Fetching all activity logs with params:', params);
+
+      const response = await activityLogsApi.getLogs(params);
+
+      if (response.success) {
+        // Apply client-side search filter to the full dataset
+        const allLogs = response.logs.filter(log => {
+          const matchesSearch = log.user_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                               log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                               log.details.toLowerCase().includes(searchTerm.toLowerCase());
+
+          return matchesSearch;
+        });
+
+        console.log('✅ Successfully fetched', allLogs.length, 'filtered logs for export');
+        return allLogs;
+      } else {
+        const errorMsg = response.message || 'Failed to fetch all activity logs';
+        console.error('❌ API returned error:', errorMsg);
+        throw new Error(errorMsg);
+      }
+    } catch (error: any) {
+      console.error('❌ Error fetching all activity logs:', error);
+      throw error;
+    }
+  };
+
   const handleRefresh = () => {
     setCurrentPage(1);
     fetchActivityLogs();
@@ -183,35 +246,55 @@ const ActivityLogs: React.FC = () => {
     setCurrentPage(page);
   };
 
-  // Confirm export to PDF after preview
-  const handleConfirmExportPDF = async () => {
-    const exportData = filteredLogs.map(log => ({ ...log }));
-    // Build dynamic title based on filters
-    let title = 'Activity Logs';
-    const filterParts = [];
-    if (userTypeFilter !== 'all') filterParts.push(`User Type: ${userTypeFilter.charAt(0).toUpperCase() + userTypeFilter.slice(1)}`);
-    if (actionFilter !== 'all') filterParts.push(`Action: ${actionFilter.charAt(0).toUpperCase() + actionFilter.slice(1)}`);
-    if (dateFilter !== 'all') {
-      let dateLabel = '';
-      if (dateFilter === 'today') dateLabel = 'Today';
-      else if (dateFilter === 'week') dateLabel = 'Last Week';
-      else if (dateFilter === 'month') dateLabel = 'Last Month';
-      filterParts.push(`Date: ${dateLabel}`);
+  // Export functions
+  const handleExport = async (format: 'pdf' | 'csv' | 'excel') => {
+    try {
+      const exportData = await fetchAllActivityLogs();
+      // Build dynamic title based on filters
+      let title = 'Activity Logs';
+      const filterParts = [];
+      if (userTypeFilter !== 'all') filterParts.push(`User Type: ${userTypeFilter.charAt(0).toUpperCase() + userTypeFilter.slice(1)}`);
+      if (actionFilter !== 'all') filterParts.push(`Action: ${actionFilter.charAt(0).toUpperCase() + actionFilter.slice(1)}`);
+      if (dateFilter !== 'all') {
+        let dateLabel = '';
+        if (dateFilter === 'today') dateLabel = 'Today';
+        else if (dateFilter === 'week') dateLabel = 'Last Week';
+        else if (dateFilter === 'month') dateLabel = 'Last Month';
+        filterParts.push(`Date: ${dateLabel}`);
+      }
+      if (searchTerm.trim()) filterParts.push(`Search: "${searchTerm.trim()}"`);
+      if (filterParts.length > 0) {
+        title += ' (' + filterParts.join(', ') + ')';
+      } else {
+        title += ' Export';
+      }
+      const options = {
+        filename: 'activity-logs',
+        title,
+        includeTimestamp: true
+      };
+
+      switch (format) {
+        case 'pdf':
+          await ExportUtils.exportToPDF(exportData, exportColumns, options);
+          break;
+        case 'csv':
+          ExportUtils.exportToCSV(exportData, exportColumns, options);
+          break;
+        case 'excel':
+          ExportUtils.exportToExcel(exportData, exportColumns, options);
+          break;
+      }
+    } catch (error) {
+      console.error('❌ Export failed:', error);
+      // Optionally show user feedback here
+    } finally {
+      setShowExportPreview(false);
     }
-    if (searchTerm.trim()) filterParts.push(`Search: "${searchTerm.trim()}"`);
-    if (filterParts.length > 0) {
-      title += ' (' + filterParts.join(', ') + ')';
-    } else {
-      title += ' Export';
-    }
-    const options = {
-      filename: 'activity-logs',
-      title,
-      includeTimestamp: true
-    };
-    await ExportUtils.exportToPDF(exportData, exportColumns, options);
-    setShowExportPreview(false);
   };
+
+  // Confirm export to PDF after preview
+  const handleConfirmExportPDF = () => handleExport('pdf');
 
   const filteredLogs = logs.filter(log => {
     const matchesSearch = log.user_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -258,26 +341,27 @@ const ActivityLogs: React.FC = () => {
           <p className="text-gray-600 mt-1">Monitor system activities and user actions</p>
         </div>
         <div className="flex items-center space-x-3">
-          <button
-            onClick={() => setShowExportPreview(true)}
-            disabled={filteredLogs.length === 0}
-            className={`px-4 py-2 rounded-lg transition-colors flex items-center ${
-              filteredLogs.length === 0
-                ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                : 'bg-green-600 text-white hover:bg-green-700'
-            }`}
-            title={filteredLogs.length === 0 ? 'No data to export' : 'Export activity logs'}
-          >
-            <i className="ri-download-line mr-2"></i>
-            Export ({filteredLogs.length})
-          </button>
-          <button
+             <button
             onClick={handleRefresh}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             <i className="ri-refresh-line mr-2"></i>
             Refresh
           </button>
+          <button
+            onClick={() => setShowExportPreview(true)}
+            disabled={totalLogs === 0}
+            className={`px-4 py-2 rounded-lg transition-colors flex items-center ${
+              totalLogs === 0
+                ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                : 'bg-green-600 text-white hover:bg-green-700'
+            }`}
+            title={totalLogs === 0 ? 'No data to export' : 'Export all activity logs with current filters'}
+          >
+            <i className="ri-download-line mr-2"></i>
+            Export All ({totalLogs})
+          </button>
+       
         </div>
       </div>
 
@@ -501,10 +585,56 @@ const ActivityLogs: React.FC = () => {
       <ExportPreviewModal
         open={showExportPreview}
         onClose={() => setShowExportPreview(false)}
-        onExport={handleConfirmExportPDF}
-        staff={filteredLogs}
-        columns={exportColumns.map(col => ({ key: col.key, label: col.label }))}
+        onExportPDF={async () => {
+          try {
+            const allLogs = await fetchAllActivityLogs();
+            ExportUtils.exportToPDF(allLogs, exportColumns, {
+              filename: "activity_logs_export",
+              title: "Activity Logs Report",
+              includeTimestamp: true,
+            });
+            showToast({ type: "success", message: `All ${allLogs.length} activity logs exported to PDF successfully` });
+            setShowExportPreview(false);
+          } catch (error) {
+            console.error('PDF export failed:', error);
+            showToast({ type: "error", message: "Failed to export activity logs to PDF" });
+          }
+        }}
+        onExportCSV={async () => {
+          try {
+            const allLogs = await fetchAllActivityLogs();
+            ExportUtils.exportToCSV(allLogs, exportColumns, {
+              filename: "activity_logs_export",
+              title: "Activity Logs Report",
+              includeTimestamp: true,
+            });
+            showToast({ type: "success", message: `All ${allLogs.length} activity logs exported to CSV successfully` });
+            setShowExportPreview(false);
+          } catch (error) {
+            console.error('CSV export failed:', error);
+            showToast({ type: "error", message: "Failed to export activity logs to CSV" });
+          }
+        }}
+        onExportExcel={async () => {
+          try {
+            const allLogs = await fetchAllActivityLogs();
+            ExportUtils.exportToExcel(allLogs, exportColumns, {
+              filename: "activity_logs_export",
+              title: "Activity Logs Report",
+              includeTimestamp: true,
+            });
+            showToast({ type: "success", message: `All ${allLogs.length} activity logs exported to Excel successfully` });
+            setShowExportPreview(false);
+          } catch (error) {
+            console.error('Excel export failed:', error);
+            showToast({ type: "error", message: "Failed to export activity logs to Excel" });
+          }
+        }}
+        data={logs}
+        columns={exportColumns.map((col) => ({ key: col.key, label: col.label }))}
+        title={`Activity Logs Report (${totalLogs})`}
       />
+
     </div>
   );
 };

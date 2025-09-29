@@ -45,6 +45,8 @@ const teamsRoutes = require('./routes/teamsRoutes');
 const userManagementRoutes = require('./routes/userManagementRoutes');
 const activityLogsRoutes = require('./routes/activityLogsRoutes');
 const publicRoutes = require('./routes/publicRoutes');
+const feedbackRoutes = require('./routes/feedbackRoutes');
+const staffDashboardRoutes = require('./routes/staffDashboardRoutes');
 
 // Routing service proxy
 const routingRoutes = require('./routes/routingRoutes');
@@ -66,6 +68,8 @@ app.use('/api/teams', teamsRoutes);
 app.use('/api/users', userManagementRoutes);
 app.use('/api/activity-logs', activityLogsRoutes);
 app.use('/api/public', publicRoutes);
+app.use('/api/feedback', feedbackRoutes);
+app.use('/api/staff/dashboard', staffDashboardRoutes);
 app.use('/api/routing', routingRoutes);
 
 // Health check route
@@ -91,8 +95,7 @@ app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({
         success: false,
-        message: 'Something went wrong!',
-        error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+        message: 'Something went wrong!'
     });
 });
 

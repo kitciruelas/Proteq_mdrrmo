@@ -8,6 +8,8 @@ import Navbar from '../../components/Navbar';
 import { getAuthState, type UserData } from '../../utils/auth';
 import { reverseGeocode } from '../../utils/geocoding';
 import ReCAPTCHA from 'react-google-recaptcha';
+import PhoneInput from 'react-phone-number-input';
+import 'react-phone-number-input/style.css';
 
 
 interface IncidentReportFormData {
@@ -150,13 +152,42 @@ export default function IncidentReportPage() {
     getLocationName();
   }, []);
 
+  // Philippine mobile number validation function
+  const validatePhilippineMobile = (value: string): boolean => {
+    if (!value) return false;
+
+    // Handle E.164 format from PhoneInput (+639XXXXXXXXX)
+    if (value.startsWith('+63')) {
+      const cleanNumber = value.replace(/\D/g, '');
+      return /^639\d{9}$/.test(cleanNumber); // 639 followed by 9 digits
+    }
+
+    // Handle local format (09XXXXXXXXX)
+    if (value.startsWith('09')) {
+      const cleanNumber = value.replace(/\D/g, '');
+      return /^09\d{9}$/.test(cleanNumber); // 09 followed by 9 digits
+    }
+
+    // Handle international format without + (639XXXXXXXXX)
+    const cleanNumber = value.replace(/\D/g, '');
+    if (cleanNumber.startsWith('639') && cleanNumber.length === 12) {
+      return /^639\d{9}$/.test(cleanNumber);
+    }
+
+    // Handle local format without spaces/dashes
+    if (cleanNumber.startsWith('9') && cleanNumber.length === 10) {
+      return /^9\d{9}$/.test(cleanNumber);
+    }
+
+    return false;
+  };
+
   const validationRules = useMemo(() => ({
     incidentType: {
       required: true
     },
     description: {
-      required: true,
-      minLength: 10
+      // No validation rules - completely optional
     },
     location: {
       required: true
@@ -171,7 +202,13 @@ export default function IncidentReportPage() {
       required: !isAuthenticated
     },
     guestContact: {
-      required: !isAuthenticated
+      required: !isAuthenticated,
+      custom: (value: string) => {
+        if (!isAuthenticated && !validatePhilippineMobile(value)) {
+          return 'Please enter a valid Philippine mobile number (e.g., 09123456789 or +639123456789)';
+        }
+        return '';
+      }
     }
   }), [isAuthenticated]);
 
@@ -353,16 +390,17 @@ export default function IncidentReportPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate terms checkbox
-    if (!agreedToTerms) {
-      setTermsError('You must agree to the Terms of Service and Privacy Policy.');
-      return;
-    }
+    // Validate terms checkbox and reCAPTCHA only for guest users
+    if (!isAuthenticated) {
+      if (!agreedToTerms) {
+        setTermsError('You must agree to the Terms of Service and Privacy Policy.');
+        return;
+      }
 
-    // Validate reCAPTCHA
-    if (!recaptchaValue) {
-      setRecaptchaError('Please complete the reCAPTCHA.');
-      return;
+      if (!recaptchaValue) {
+        setRecaptchaError('Please complete the reCAPTCHA.');
+        return;
+      }
     }
 
     console.log('Form submission started...');
@@ -837,7 +875,7 @@ export default function IncidentReportPage() {
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-3">
             <i className="ri-file-text-line mr-2 text-purple-600"></i>
-            Detailed Description <span className="text-red-500">*</span>
+            Detailed Description <span className="text-gray-500">(optional)</span>
           </label>
           <textarea
             value={fields.description.value}
@@ -855,9 +893,7 @@ export default function IncidentReportPage() {
           {fields.description.touched && fields.description.error && (
             <p className="text-red-600 text-sm mt-2">{fields.description.error}</p>
           )}
-          <p className="text-gray-500 text-sm mt-2">
-            Minimum 10 characters required. Be as specific as possible to help emergency responders.
-          </p>
+         
         </div>
       </div>
 
@@ -940,39 +976,7 @@ export default function IncidentReportPage() {
         </div>
       </div>
 
-      {/* Terms of Service and Privacy Policy checkbox */}
-      <div className="mt-6">
-        <label className="inline-flex items-center">
-          <input
-            type="checkbox"
-            checked={agreedToTerms}
-            onChange={onTermsChange}
-            className="form-checkbox h-5 w-5 text-red-600"
-          />
-          <span className="ml-2 text-gray-700 text-sm">
-            I agree to the{' '}
-            <a href="/terms-of-service" target="_blank" rel="noopener noreferrer" className="text-red-600 underline">
-              Terms of Service
-            </a>{' '}
-            and{' '}
-            <a href="/privacy-policy" target="_blank" rel="noopener noreferrer" className="text-red-600 underline">
-              Privacy Policy
-            </a>
-            <span className="text-red-600">*</span>
-          </span>
-        </label>
-        {termsError && <p className="text-red-600 text-sm mt-1">{termsError}</p>}
-      </div>
 
-      {/* reCAPTCHA widget */}
-      <div className="mt-6">
-        <ReCAPTCHA
-          sitekey="6LfVgHUqAAAAAJtQJXShsLo2QbyGby2jquueTZYV"
-          onChange={onRecaptchaChange}
-          ref={recaptchaRef}
-        />
-        {recaptchaError && <p className="text-red-600 text-sm mt-1">{recaptchaError}</p>}
-      </div>
     </>
   );
 
@@ -1130,19 +1134,26 @@ export default function IncidentReportPage() {
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <i className="ri-phone-line text-gray-400"></i>
                       </div>
-                      <input
-                        type="tel"
-                        id="guestContact"
-                        name="guestContact"
+                      <PhoneInput
+                        international
+                        defaultCountry="PH"
                         value={fields.guestContact.value}
-                        onChange={(e) => setValue('guestContact', e.target.value)}
+                        onChange={(value) => {
+                          // Store the formatted value from PhoneInput
+                          setValue('guestContact', value || '');
+                        }}
                         className={`w-full pl-10 pr-4 py-4 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all ${
                           fields.guestContact.error ? 'border-red-300' : 'border-gray-300'
                         }`}
-                        placeholder="Enter your phone number"
-                        required
+                        inputClassName="w-full py-4 px-4 border-0 focus:ring-0 focus:outline-none bg-transparent text-gray-900 placeholder-gray-500"
+                        buttonClassName="px-3 py-4 border-r border-gray-300 bg-gray-50 hover:bg-gray-100"
+                        dropdownClassName="bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+                        inputProps={{ required: true }}
                       />
                     </div>
+                    <p className="text-gray-500 text-xs mt-1">
+                      Enter a valid Philippine mobile number (e.g., +63 912 345 6789 or 0912 345 6789)
+                    </p>
                     {fields.guestContact.touched && fields.guestContact.error && (
                       <p className="text-red-600 text-sm mt-2">{fields.guestContact.error}</p>
                     )}
@@ -1152,6 +1163,40 @@ export default function IncidentReportPage() {
 
               {/* Include the same form sections as authenticated users */}
               {renderIncidentFormSections()}
+
+              {/* Terms of Service and Privacy Policy checkbox - Only for guest users */}
+              <div className="mt-6">
+                <label className="inline-flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={agreedToTerms}
+                    onChange={onTermsChange}
+                    className="form-checkbox h-5 w-5 text-red-600"
+                  />
+                  <span className="ml-2 text-gray-700 text-sm">
+                    I agree to the{' '}
+                    <a href="/terms-of-service" target="_blank" rel="noopener noreferrer" className="text-red-600 underline">
+                      Terms of Service
+                    </a>{' '}
+                    and{' '}
+                    <a href="/privacy-policy" target="_blank" rel="noopener noreferrer" className="text-red-600 underline">
+                      Privacy Policy
+                    </a>
+                    <span className="text-red-600">*</span>
+                  </span>
+                </label>
+                {termsError && <p className="text-red-600 text-sm mt-1">{termsError}</p>}
+              </div>
+
+              {/* reCAPTCHA widget - Only for guest users */}
+              <div className="mt-6">
+                <ReCAPTCHA
+                  sitekey="6LfVgHUqAAAAAJtQJXShsLo2QbyGby2jquueTZYV"
+                  onChange={onRecaptchaChange}
+                  ref={recaptchaRef}
+                />
+                {recaptchaError && <p className="text-red-600 text-sm mt-1">{recaptchaError}</p>}
+              </div>
 
               {/* Submit Section */}
               <div className="border-t border-gray-200 pt-8">
@@ -1176,7 +1221,7 @@ export default function IncidentReportPage() {
                       </>
                     )}
                   </Button>
-                  
+
                 </div>
               </div>
             </form>

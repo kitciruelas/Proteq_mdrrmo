@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { evacuationCentersApi } from '../../../../utils/api';
 import CoordinatePicker from '../../../../components/CoordinatePicker';
+import { useToast } from '../../../../components/base/Toast';
+import ExportPreviewModal from '../../../../components/base/ExportPreviewModal';
+import ExportUtils from '../../../../utils/exportUtils';
+import type { ExportColumn } from '../../../../utils/exportUtils';
 
 // Simple SVG icons to avoid dependency issues
 const SearchIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
@@ -88,6 +92,7 @@ interface EvacuationCenter {
 }
 
 const EvacuationCentersManagement: React.FC = () => {
+  const { showToast } = useToast();
   const [centers, setCenters] = useState<EvacuationCenter[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [search, setSearch] = useState<string>('');
@@ -100,6 +105,7 @@ const EvacuationCentersManagement: React.FC = () => {
   const [formData, setFormData] = useState<Partial<EvacuationCenter>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [showExportModal, setShowExportModal] = useState<boolean>(false);
   const [showMapPicker, setShowMapPicker] = useState<boolean>(false);
 
   useEffect(() => {
@@ -200,9 +206,19 @@ const EvacuationCentersManagement: React.FC = () => {
         setShowCreateModal(false);
         setFormData({});
         setErrors({});
+        showToast({
+          type: "success",
+          title: "Success",
+          message: "Evacuation center created successfully",
+        });
       }
     } catch (error) {
       console.error('Failed to create center:', error);
+      showToast({
+        type: "error",
+        title: "Error",
+        message: "Failed to create evacuation center. Please try again.",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -235,9 +251,19 @@ const EvacuationCentersManagement: React.FC = () => {
         setSelectedCenter(null);
         setFormData({});
         setErrors({});
+        showToast({
+          type: "success",
+          title: "Success",
+          message: "Evacuation center updated successfully",
+        });
       }
     } catch (error) {
       console.error('Failed to update center:', error);
+      showToast({
+        type: "error",
+        title: "Error",
+        message: "Failed to update evacuation center. Please try again.",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -251,8 +277,18 @@ const EvacuationCentersManagement: React.FC = () => {
       setCenters(prev => prev.filter(c => c.center_id !== selectedCenter.center_id));
       setShowDeleteModal(false);
       setSelectedCenter(null);
+      showToast({
+        type: "success",
+        title: "Success",
+        message: "Evacuation center deleted successfully",
+      });
     } catch (error) {
       console.error('Failed to delete center:', error);
+      showToast({
+        type: "error",
+        title: "Error",
+        message: "Failed to delete evacuation center. Please try again.",
+      });
     }
   };
 
@@ -273,6 +309,67 @@ const EvacuationCentersManagement: React.FC = () => {
   const openDeleteModal = (center: EvacuationCenter) => {
     setSelectedCenter(center);
     setShowDeleteModal(true);
+  };
+
+  const handleExport = async (format: 'csv' | 'excel' | 'pdf', columns: ExportColumn[]) => {
+    try {
+      const exportData = filteredAndSortedCenters.map(center => ({
+        name: center.name,
+        status: center.status,
+        capacity: center.capacity,
+        current_occupancy: center.current_occupancy,
+        occupancy_rate: `${getOccupancyPercentage(center)}%`,
+        latitude: center.latitude,
+        longitude: center.longitude,
+        contact_person: center.contact_person || 'N/A',
+        contact_number: center.contact_number || 'N/A',
+        address: center.address || 'N/A',
+        created_at: center.created_at || 'N/A',
+        updated_at: center.updated_at || 'N/A',
+      }));
+
+      const exportColumns: ExportColumn[] = columns.map(col => ({
+        key: col.key,
+        label: col.label,
+        format: col.format,
+      }));
+
+      switch (format) {
+        case 'csv':
+          ExportUtils.exportToCSV(exportData, exportColumns, {
+            filename: `evacuation-centers-${new Date().toISOString().split('T')[0]}`,
+            title: 'Evacuation Centers Report',
+          });
+          break;
+        case 'excel':
+          ExportUtils.exportToExcel(exportData, exportColumns, {
+            filename: `evacuation-centers-${new Date().toISOString().split('T')[0]}`,
+            title: 'Evacuation Centers Report',
+          });
+          break;
+        case 'pdf':
+          await ExportUtils.exportToPDF(exportData, exportColumns, {
+            filename: `evacuation-centers-${new Date().toISOString().split('T')[0]}`,
+            title: 'Evacuation Centers Report',
+          });
+          break;
+      }
+
+      showToast({
+        type: "success",
+        title: "Success",
+        message: `Data exported successfully as ${format.toUpperCase()}`,
+      });
+
+      setShowExportModal(false);
+    } catch (error) {
+      console.error('Export failed:', error);
+      showToast({
+        type: "error",
+        title: "Error",
+        message: "Failed to export data. Please try again.",
+      });
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -302,17 +399,27 @@ const EvacuationCentersManagement: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Evacuation Centers</h1>
           <p className="text-gray-600 mt-1">Manage and monitor all evacuation centers in the system</p>
         </div>
-        <button
-          onClick={() => {
-            setFormData({});
-            setErrors({});
-            setShowCreateModal(true);
-          }}
-          className="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 focus:ring-4 focus:ring-blue-200 transition-all duration-200 shadow-sm hover:shadow-md"
-        >
-          <PlusIcon className="w-5 h-5 mr-2" />
-          Add New Center
-        </button>
+        <div className="flex space-x-3">
+          <button
+            onClick={() => setShowExportModal(true)}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          >
+                        <i className="ri-download-line mr-2"></i>
+
+            Export Centers
+          </button>
+          <button
+            onClick={() => {
+              setFormData({});
+              setErrors({});
+              setShowCreateModal(true);
+            }}
+            className="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 focus:ring-4 focus:ring-blue-200 transition-all duration-200 shadow-sm hover:shadow-md"
+          >
+            <PlusIcon className="w-5 h-5 mr-2" />
+            Add New Center
+          </button>
+        </div>
       </div>
 
         {/* Stats */}
@@ -715,7 +822,7 @@ const EvacuationCentersManagement: React.FC = () => {
               <div className="p-6">
                 <h2 className="text-xl font-bold mb-4">Confirm Delete</h2>
                 <p className="text-gray-600 mb-6">
-                  Are you sure you want to delete the evacuation center "{selectedCenter.name}"? 
+                  Are you sure you want to delete the evacuation center "{selectedCenter.name}"?
                   This action cannot be undone.
                 </p>
                 <div className="flex justify-end space-x-3">
@@ -739,6 +846,50 @@ const EvacuationCentersManagement: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Export Modal */}
+        <ExportPreviewModal
+          open={showExportModal}
+          data={filteredAndSortedCenters}
+          columns={[
+            { key: 'name', label: 'Center Name' },
+            { key: 'status', label: 'Status' },
+            { key: 'capacity', label: 'Capacity' },
+            { key: 'current_occupancy', label: 'Current Occupancy' },
+            { key: 'occupancy_rate', label: 'Occupancy Rate' },
+            { key: 'contact_person', label: 'Contact Person' },
+            { key: 'contact_number', label: 'Contact Number' },
+          ]}
+          title="Evacuation Centers Export"
+          onClose={() => setShowExportModal(false)}
+          onExportPDF={() => handleExport('pdf', [
+            { key: 'name', label: 'Center Name' },
+            { key: 'status', label: 'Status' },
+            { key: 'capacity', label: 'Capacity' },
+            { key: 'current_occupancy', label: 'Current Occupancy' },
+            { key: 'occupancy_rate', label: 'Occupancy Rate' },
+            { key: 'contact_person', label: 'Contact Person' },
+            { key: 'contact_number', label: 'Contact Number' },
+          ])}
+          onExportCSV={() => handleExport('csv', [
+            { key: 'name', label: 'Center Name' },
+            { key: 'status', label: 'Status' },
+            { key: 'capacity', label: 'Capacity' },
+            { key: 'current_occupancy', label: 'Current Occupancy' },
+            { key: 'occupancy_rate', label: 'Occupancy Rate' },
+            { key: 'contact_person', label: 'Contact Person' },
+            { key: 'contact_number', label: 'Contact Number' },
+          ])}
+          onExportExcel={() => handleExport('excel', [
+            { key: 'name', label: 'Center Name' },
+            { key: 'status', label: 'Status' },
+            { key: 'capacity', label: 'Capacity' },
+            { key: 'current_occupancy', label: 'Current Occupancy' },
+            { key: 'occupancy_rate', label: 'Occupancy Rate' },
+            { key: 'contact_person', label: 'Contact Person' },
+            { key: 'contact_number', label: 'Contact Number' },
+          ])}
+        />
     </div>
   );
 };

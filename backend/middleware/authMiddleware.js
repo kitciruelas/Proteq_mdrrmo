@@ -1,3 +1,4 @@
+
 const jwt = require('jsonwebtoken');
 const pool = require('../config/conn');
 
@@ -15,8 +16,14 @@ const authenticateUser = async (req, res, next) => {
 
         const token = authHeader.substring(7); // Remove 'Bearer ' prefix
 
-        // Verify JWT token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        if (!process.env.JWT_SECRET) {
+            console.error('JWT_SECRET environment variable is not set');
+            return res.status(500).json({
+                success: false,
+                message: 'Server configuration error'
+            });
+        }
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
         // Check if token is for user type
         if (decoded.type !== 'user') {
@@ -82,7 +89,14 @@ const authenticateAdmin = async (req, res, next) => {
         const token = authHeader.substring(7); // Remove 'Bearer ' prefix
 
         // Verify JWT token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        if (!process.env.JWT_SECRET) {
+            console.error('JWT_SECRET environment variable is not set');
+            return res.status(500).json({
+                success: false,
+                message: 'Server configuration error'
+            });
+        }
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
         // Check if token is for admin type
         if (decoded.type !== 'admin') {
@@ -148,7 +162,14 @@ const authenticateStaff = async (req, res, next) => {
         const token = authHeader.substring(7); // Remove 'Bearer ' prefix
 
         // Verify JWT token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        if (!process.env.JWT_SECRET) {
+            console.error('JWT_SECRET environment variable is not set');
+            return res.status(500).json({
+                success: false,
+                message: 'Server configuration error'
+            });
+        }
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
         // Check if token is for staff type
         if (decoded.type !== 'staff') {
@@ -160,7 +181,7 @@ const authenticateStaff = async (req, res, next) => {
 
         // Get staff details from database
         const [staff] = await pool.execute(
-            'SELECT * FROM staff WHERE id = ? AND status = 1 AND availability = "available"',
+            'SELECT * FROM staff WHERE id = ? AND status = 1',
             [decoded.id]
         );
 
@@ -214,7 +235,14 @@ const authenticateAny = async (req, res, next) => {
         const token = authHeader.substring(7); // Remove 'Bearer ' prefix
 
         // Verify JWT token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        if (!process.env.JWT_SECRET) {
+            console.error('JWT_SECRET environment variable is not set');
+            return res.status(500).json({
+                success: false,
+                message: 'Server configuration error'
+            });
+        }
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
         let user = null;
 
@@ -233,7 +261,7 @@ const authenticateAny = async (req, res, next) => {
             if (admins.length > 0) user = admins[0];
         } else if (decoded.type === 'staff') {
             const [staff] = await pool.execute(
-                'SELECT *, "staff" as user_type FROM staff WHERE id = ? AND status = 1 AND availability = "available"',
+                'SELECT *, "staff" as user_type FROM staff WHERE id = ? AND status = 1',
                 [decoded.id]
             );
             if (staff.length > 0) user = staff[0];

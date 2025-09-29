@@ -1,303 +1,521 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import Button from '../../components/base/Button';
-import Input from '../../components/base/Input';
-import Select from '../../components/base/Select';
-import Card from '../../components/base/Card';
-import Avatar from '../../components/base/Avatar';
-import LogoutModal from '../../components/LogoutModal';
-import useForm from '../../hooks/useForm';
-import Navbar from '../../components/Navbar';
-import { getAuthState, clearAuthData, updateUserData, type UserData } from '../../utils/auth';
-import { profileApi } from '../../utils/api';
+
+import type React from "react"
+import { useState, useEffect } from "react"
+import { useNavigate } from "react-router-dom"
+import Button from "../../components/base/Button"
+import Input from "../../components/base/Input"
+import Select from "../../components/base/Select"
+import Avatar from "../../components/base/Avatar"
+import Modal from "../../components/base/Modal"
+import LogoutModal from "../../components/LogoutModal"
+import useForm from "../../hooks/useForm"
+import Navbar from "../../components/Navbar"
+import { getAuthState, clearAuthData, updateUserData, type UserData } from "../../utils/auth"
+import { profileApi } from "../../utils/api"
+import PhoneInput from 'react-phone-number-input'
+import 'react-phone-number-input/style.css'
+
+// Philippine mobile number validation function
+const validatePhilippineMobile = (value: string): boolean => {
+  if (!value) return false;
+
+  // Handle E.164 format from PhoneInput (+639XXXXXXXXX)
+  if (value.startsWith('+63')) {
+    const cleanNumber = value.replace(/\D/g, '');
+    return /^639\d{9}$/.test(cleanNumber); // 639 followed by 9 digits
+  }
+
+  // Handle local format (09XXXXXXXXX)
+  if (value.startsWith('09')) {
+    const cleanNumber = value.replace(/\D/g, '');
+    return /^09\d{9}$/.test(cleanNumber); // 09 followed by 9 digits
+  }
+
+  // Handle international format without + (639XXXXXXXXX)
+  const cleanNumber = value.replace(/\D/g, '');
+  if (cleanNumber.startsWith('639') && cleanNumber.length === 12) {
+    return /^639\d{9}$/.test(cleanNumber);
+  }
+
+  // Handle local format without spaces/dashes
+  if (cleanNumber.startsWith('9') && cleanNumber.length === 10) {
+    return /^9\d{9}$/.test(cleanNumber);
+  }
+
+  return false;
+};
 
 const rosarioBarangays = [
-  { name: 'Alupay', lat: 13.8404, lng: 121.2922 },
-  { name: 'Antipolo', lat: 13.7080, lng: 121.3096 },
-  { name: 'Bagong Pook', lat: 13.8402, lng: 121.2216 },
-  { name: 'Balibago', lat: 13.8512, lng: 121.2855 },
-  { name: 'Barangay A', lat: 13.8457, lng: 121.2104 },
-  { name: 'Barangay B', lat: 13.8461, lng: 121.2065 },
-  { name: 'Barangay C', lat: 13.8467, lng: 121.2032 },
-  { name: 'Barangay D', lat: 13.8440, lng: 121.2035 },
-  { name: 'Barangay E', lat: 13.8415, lng: 121.2047 },
-  { name: 'Bayawang', lat: 13.7944, lng: 121.2798 },
-  { name: 'Baybayin', lat: 13.8277, lng: 121.2589 },
-  { name: 'Bulihan', lat: 13.7967, lng: 121.2351 },
-  { name: 'Cahigam', lat: 13.8021, lng: 121.2501 },
-  { name: 'Calantas', lat: 13.7340, lng: 121.3129 },
-  { name: 'Colongan', lat: 13.8114, lng: 121.1762 },
-  { name: 'Itlugan', lat: 13.8190, lng: 121.2036 },
-  { name: 'Leviste', lat: 13.7694, lng: 121.2868 },
-  { name: 'Lumbangan', lat: 13.8122, lng: 121.2649 },
-  { name: 'Maalas-as', lat: 13.8112, lng: 121.2122 },
-  { name: 'Mabato', lat: 13.8144, lng: 121.2913 },
-  { name: 'Mabunga', lat: 13.7810, lng: 121.2924 },
-  { name: 'Macalamcam A', lat: 13.8551, lng: 121.3046 },
-  { name: 'Macalamcam B', lat: 13.8606, lng: 121.3265 },
-  { name: 'Malaya', lat: 13.8535, lng: 121.1720 },
-  { name: 'Maligaya', lat: 13.8182, lng: 121.2742 },
-  { name: 'Marilag', lat: 13.8562, lng: 121.1764 },
-  { name: 'Masaya', lat: 13.8383, lng: 121.1852 },
-  { name: 'Matamis', lat: 13.7216, lng: 121.3305 },
-  { name: 'Mavalor', lat: 13.8177, lng: 121.2315 },
-  { name: 'Mayuro', lat: 13.7944, lng: 121.2623 },
-  { name: 'Namuco', lat: 13.8382, lng: 121.2036 },
-  { name: 'Namunga', lat: 13.8431, lng: 121.1978 },
-  { name: 'Nasi', lat: 13.7699, lng: 121.3127 },
-  { name: 'Natu', lat: 13.8420, lng: 121.2683 },
-  { name: 'Palakpak', lat: 13.7079, lng: 121.3320 },
-  { name: 'Pinagsibaan', lat: 13.8438, lng: 121.3141 },
-  { name: 'Putingkahoy', lat: 13.8349, lng: 121.3227 },
-  { name: 'Quilib', lat: 13.8603, lng: 121.2002 },
-  { name: 'Salao', lat: 13.8578, lng: 121.3455 },
-  { name: 'San Carlos', lat: 13.8478, lng: 121.2475 },
-  { name: 'San Ignacio', lat: 13.8335, lng: 121.1764 },
-  { name: 'San Isidro', lat: 13.8074, lng: 121.3152 },
-  { name: 'San Jose', lat: 13.8419, lng: 121.2329 },
-  { name: 'San Roque', lat: 13.8518, lng: 121.2039 },
-  { name: 'Santa Cruz', lat: 13.8599, lng: 121.1853 },
-  { name: 'Timbugan', lat: 13.8095, lng: 121.1869 },
-  { name: 'Tiquiwan', lat: 13.8284, lng: 121.2399 },
-  { name: 'Tulos', lat: 13.7231, lng: 121.2971 },
-];
-
+  { name: "Alupay", lat: 13.8404, lng: 121.2922 },
+  { name: "Antipolo", lat: 13.708, lng: 121.3096 },
+  { name: "Bagong Pook", lat: 13.8402, lng: 121.2216 },
+  { name: "Balibago", lat: 13.8512, lng: 121.2855 },
+  { name: "Barangay A", lat: 13.8457, lng: 121.2104 },
+  { name: "Barangay B", lat: 13.8461, lng: 121.2065 },
+  { name: "Barangay C", lat: 13.8467, lng: 121.2032 },
+  { name: "Barangay D", lat: 13.844, lng: 121.2035 },
+  { name: "Barangay E", lat: 13.8415, lng: 121.2047 },
+  { name: "Bayawang", lat: 13.7944, lng: 121.2798 },
+  { name: "Baybayin", lat: 13.8277, lng: 121.2589 },
+  { name: "Bulihan", lat: 13.7967, lng: 121.2351 },
+  { name: "Cahigam", lat: 13.8021, lng: 121.2501 },
+  { name: "Calantas", lat: 13.734, lng: 121.3129 },
+  { name: "Colongan", lat: 13.8114, lng: 121.1762 },
+  { name: "Itlugan", lat: 13.819, lng: 121.2036 },
+  { name: "Leviste", lat: 13.7694, lng: 121.2868 },
+  { name: "Lumbangan", lat: 13.8122, lng: 121.2649 },
+  { name: "Maalas-as", lat: 13.8112, lng: 121.2122 },
+  { name: "Mabato", lat: 13.8144, lng: 121.2913 },
+  { name: "Mabunga", lat: 13.781, lng: 121.2924 },
+  { name: "Macalamcam A", lat: 13.8551, lng: 121.3046 },
+  { name: "Macalamcam B", lat: 13.8606, lng: 121.3265 },
+  { name: "Malaya", lat: 13.8535, lng: 121.172 },
+  { name: "Maligaya", lat: 13.8182, lng: 121.2742 },
+  { name: "Marilag", lat: 13.8562, lng: 121.1764 },
+  { name: "Masaya", lat: 13.8383, lng: 121.1852 },
+  { name: "Matamis", lat: 13.7216, lng: 121.3305 },
+  { name: "Mavalor", lat: 13.8177, lng: 121.2315 },
+  { name: "Mayuro", lat: 13.7944, lng: 121.2623 },
+  { name: "Namuco", lat: 13.8382, lng: 121.2036 },
+  { name: "Namunga", lat: 13.8431, lng: 121.1978 },
+  { name: "Nasi", lat: 13.7699, lng: 121.3127 },
+  { name: "Natu", lat: 13.842, lng: 121.2683 },
+  { name: "Palakpak", lat: 13.7079, lng: 121.332 },
+  { name: "Pinagsibaan", lat: 13.8438, lng: 121.3141 },
+  { name: "Putingkahoy", lat: 13.8349, lng: 121.3227 },
+  { name: "Quilib", lat: 13.8603, lng: 121.2002 },
+  { name: "Salao", lat: 13.8578, lng: 121.3455 },
+  { name: "San Carlos", lat: 13.8478, lng: 121.2475 },
+  { name: "San Ignacio", lat: 13.8335, lng: 121.1764 },
+  { name: "San Isidro", lat: 13.8074, lng: 121.3152 },
+  { name: "San Jose", lat: 13.8419, lng: 121.2329 },
+  { name: "San Roque", lat: 13.8518, lng: 121.2039 },
+  { name: "Santa Cruz", lat: 13.8599, lng: 121.1853 },
+  { name: "Timbugan", lat: 13.8095, lng: 121.1869 },
+  { name: "Tiquiwan", lat: 13.8284, lng: 121.2399 },
+  { name: "Tulos", lat: 13.7231, lng: 121.2971 },
+]
 
 interface ProfileFormData {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  address: string;
-  city: string;
-  state: string;
-  zipCode: string;
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  address: string
+  city: string
+  state: string
+  zipCode: string
 }
 
 export default function ProfilePage() {
-  const navigate = useNavigate();
-  const [userData, setUserData] = useState<UserData>({});
-  const [isEditing, setIsEditing] = useState(false);
-  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
-  const [showErrorMessage, setShowErrorMessage] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-
+  const navigate = useNavigate()
+  const [userData, setUserData] = useState<UserData>({})
+  const [isEditing, setIsEditing] = useState(false)
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false)
+  const [showErrorMessage, setShowErrorMessage] = useState(false)
+  const [errorMessage, setErrorMessage] = useState("")
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  })
+  const [passwordErrors, setPasswordErrors] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  })
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
 
   useEffect(() => {
-    const authState = getAuthState();
+    const authState = getAuthState()
     if (!authState.isAuthenticated) {
-      navigate('/auth/login');
-      return;
+      navigate("/auth/login")
+      return
     }
-    setUserData(authState.userData || {});
-    setIsAuthenticated(true);
+    setUserData(authState.userData || {})
+    setIsAuthenticated(true)
 
     // Fetch fresh profile data to ensure we have all fields including phone and address
     const fetchProfileData = async () => {
       try {
-        const response = await profileApi.getProfile();
+        setIsLoading(true)
+        const response = await profileApi.getProfile()
         if (response.success && response.user) {
-          setUserData(prev => ({ ...prev, ...response.user }));
+          setUserData((prev) => ({ ...prev, ...response.user }))
           // Update storage with complete user data
-          updateUserData({ ...authState.userData, ...response.user });
+          updateUserData({ ...authState.userData, ...response.user })
         }
       } catch (error) {
-        console.error('Failed to fetch profile data:', error);
+        console.error("Failed to fetch profile data:", error)
         // Continue with existing auth data if fetch fails
+      } finally {
+        setIsLoading(false)
       }
-    };
+    }
 
-    fetchProfileData();
+    fetchProfileData()
 
     // Listen for authentication state changes
     const handleAuthStateChange = () => {
-      const newAuthState = getAuthState();
+      const newAuthState = getAuthState()
       if (!newAuthState.isAuthenticated) {
-        navigate('/auth/login');
-        return;
+        navigate("/auth/login")
+        return
       }
-      setIsAuthenticated(newAuthState.isAuthenticated);
-      setUserData(newAuthState.userData || {});
-    };
+      setIsAuthenticated(newAuthState.isAuthenticated)
+      setUserData(newAuthState.userData || {})
+    }
 
-    window.addEventListener('storage', handleAuthStateChange);
-    window.addEventListener('authStateChanged', handleAuthStateChange);
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault()
+        e.returnValue = ""
+      }
+    }
+
+    window.addEventListener("storage", handleAuthStateChange)
+    window.addEventListener("authStateChanged", handleAuthStateChange)
+    window.addEventListener("beforeunload", handleBeforeUnload)
 
     return () => {
-      window.removeEventListener('storage', handleAuthStateChange);
-      window.removeEventListener('authStateChanged', handleAuthStateChange);
-    };
-  }, [navigate]);
+      window.removeEventListener("storage", handleAuthStateChange)
+      window.removeEventListener("authStateChanged", handleAuthStateChange)
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+    }
+  }, [navigate])
 
   const handleLogoutClick = () => {
-    setShowLogoutModal(true);
-  };
+    if (hasUnsavedChanges) {
+      if (!window.confirm("You have unsaved changes. Are you sure you want to sign out?")) {
+        return
+      }
+    }
+    setShowLogoutModal(true)
+  }
 
   const handleLogoutConfirm = async () => {
-    setIsLoggingOut(true);
+    setIsLoggingOut(true)
     try {
       // Add a small delay for better UX
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      clearAuthData();
-      navigate('/');
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+      clearAuthData()
+      navigate("/")
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error("Logout error:", error)
     } finally {
-      setIsLoggingOut(false);
-      setShowLogoutModal(false);
+      setIsLoggingOut(false)
+      setShowLogoutModal(false)
     }
-  };
+  }
 
   const handleLogoutCancel = () => {
-    setShowLogoutModal(false);
-  };
+    setShowLogoutModal(false)
+  }
+
+  const handlePasswordInputChange = (field: keyof typeof passwordForm, value: string) => {
+    setPasswordForm(prev => ({ ...prev, [field]: value }))
+    // Clear error when user starts typing
+    if (passwordErrors[field]) {
+      setPasswordErrors(prev => ({ ...prev, [field]: '' }))
+    }
+  }
+
+  const validatePasswordForm = () => {
+    const errors = {
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: ''
+    }
+
+    if (!passwordForm.currentPassword) {
+      errors.currentPassword = 'Current password is required'
+    }
+
+    if (!passwordForm.newPassword) {
+      errors.newPassword = 'New password is required'
+    } else if (passwordForm.newPassword.length < 8) {
+      errors.newPassword = 'Password must be at least 8 characters long'
+    } else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(passwordForm.newPassword)) {
+      errors.newPassword = 'Password must contain at least one uppercase letter, one lowercase letter, and one number'
+    }
+
+    if (!passwordForm.confirmPassword) {
+      errors.confirmPassword = 'Please confirm your new password'
+    } else if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      errors.confirmPassword = 'Passwords do not match'
+    }
+
+    if (passwordForm.currentPassword && passwordForm.newPassword &&
+        passwordForm.currentPassword === passwordForm.newPassword) {
+      errors.newPassword = 'New password must be different from current password'
+    }
+
+    setPasswordErrors(errors)
+    return !Object.values(errors).some(error => error !== '')
+  }
+
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!validatePasswordForm()) {
+      return
+    }
+
+    setIsChangingPassword(true)
+
+    try {
+      const response = await profileApi.changePassword(
+        passwordForm.currentPassword,
+        passwordForm.newPassword
+      )
+
+      if (response.success) {
+        // Reset form
+        setPasswordForm({
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: ''
+        })
+        setShowPasswordModal(false)
+
+        // Show success message
+        setShowSuccessMessage(true)
+        setTimeout(() => setShowSuccessMessage(false), 5000)
+      } else {
+        setPasswordErrors(prev => ({
+          ...prev,
+          currentPassword: response.message || 'Failed to change password'
+        }))
+      }
+    } catch (error) {
+      console.error('Password change failed:', error)
+      setPasswordErrors(prev => ({
+        ...prev,
+        currentPassword: error instanceof Error ? error.message : 'Failed to change password. Please try again.'
+      }))
+    } finally {
+      setIsChangingPassword(false)
+    }
+  }
+
+  const handlePasswordModalClose = () => {
+    if (isChangingPassword) return // Prevent closing while submitting
+
+    setShowPasswordModal(false)
+    setPasswordForm({
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: ''
+    })
+    setPasswordErrors({
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: ''
+    })
+  }
 
   const { fields, setValue, validateAll, getValues, isSubmitting, setIsSubmitting } = useForm<ProfileFormData>(
     {
-      firstName: '',
-      lastName: '',
-      email: '',
-      phone: '',
-      address: '',
-      city: '',
-      state: '',
-      zipCode: ''
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
+      address: "",
+      city: "",
+      state: "",
+      zipCode: "",
     },
     {
       firstName: { required: true },
       lastName: { required: true },
       email: {
         required: true,
-        pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
       },
-      phone: { 
+      phone: {
         required: false,
-        pattern: /^(\\+63|0)9\d{9}$/ // Philippines phone number validation: starts with +63 or 0 followed by 9 digits
+        custom: (value: string) => {
+          if (!value) return null; // Optional field
+          return validatePhilippineMobile(value) ? null : "Please enter a valid Philippine mobile number (e.g., 09123456789 or +639123456789)"
+        },
       },
       address: { required: false },
-      city: { required: false },
-      state: { required: false },
-      zipCode: { 
+      city: { required: false }, // Fixed to "Rosario"
+      state: { required: false }, // Fixed to "Batangas"
+      zipCode: {
         required: false,
-        pattern: /^\d{4,10}$/ // Basic zip code validation
-      }
-    }
-  );
+        pattern: /^\d{4,10}$/, // Basic zip code validation
+      },
+    },
+  )
 
   useEffect(() => {
-    // Populate form fields with user data when component mounts
-    if (userData && Object.keys(userData).length > 0) {
-      // Handle both camelCase and snake_case field names
+    if (userData && Object.keys(userData).length > 0 && !isEditing) {
       const formData = {
-        firstName: userData.firstName || userData.first_name || '',
-        lastName: userData.lastName || userData.last_name || '',
-        email: userData.email || '',
-        phone: userData.phone || '',
-        address: userData.address || '',
-        city: userData.city || '',
-        state: userData.state || '',
-        zipCode: userData.zipCode || ''
-      };
-      
-      // Use a flag to prevent re-running this effect
+        firstName: userData.firstName || userData.first_name || "",
+        lastName: userData.lastName || userData.last_name || "",
+        email: userData.email || "",
+        phone: userData.phone || "",
+        address: userData.address || "",
+        city: userData.city || "",
+        state: userData.state || "",
+        zipCode: userData.zipCode || "",
+      }
+
       const shouldUpdate = Object.entries(formData).some(([key, value]) => {
-        const currentValue = fields[key as keyof ProfileFormData]?.value;
-        return currentValue !== value;
-      });
-      
+        const currentValue = fields[key as keyof ProfileFormData]?.value
+        return currentValue !== value
+      })
+
       if (shouldUpdate) {
-        // Update all form fields at once
         Object.entries(formData).forEach(([key, value]) => {
-          setValue(key as keyof ProfileFormData, value);
-        });
+          setValue(key as keyof ProfileFormData, value)
+        })
+        setHasUnsavedChanges(false)
       }
     }
-  }, [userData]); // Removed setValue from dependencies to prevent infinite loops
+  }, [userData, isEditing])
+
+  const handleFieldChange = (field: keyof ProfileFormData, value: string | undefined) => {
+    setValue(field, value || "")
+    setHasUnsavedChanges(true)
+  }
 
   const handleEdit = () => {
-    setIsEditing(true);
-  };
+    setIsEditing(true)
+    setHasUnsavedChanges(false)
+  }
 
   const handleCancel = () => {
-    setIsEditing(false);
+    if (hasUnsavedChanges) {
+      if (!window.confirm("You have unsaved changes. Are you sure you want to cancel?")) {
+        return
+      }
+    }
+    setIsEditing(false)
+    setHasUnsavedChanges(false)
     // The useEffect will automatically repopulate the form with original user data
-  };
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    e.preventDefault()
 
-    if (!validateAll()) return;
+    if (!validateAll()) return
 
-    setIsSubmitting(true);
-    setShowErrorMessage(false);
-    setShowSuccessMessage(false);
+      setIsSubmitting(true)
+      setShowErrorMessage(false)
+      setShowSuccessMessage(false)
 
-    try {
-      const formData = getValues();
-      console.log('Updating profile with data:', formData);
-      
-      const response = await profileApi.updateProfile(formData);
+      try {
+        const formData = getValues()
+        // Ensure province, city, and zip are set to fixed values
+        formData.state = "Batangas"
+        formData.city = "Rosario"
+        formData.zipCode = "4225"
+        console.log("Updating profile with data:", formData)
 
-      if (response.success) {
-        console.log('Profile updated successfully:', response.user);
-        const updatedUser = { ...userData, ...response.user };
-        setUserData(updatedUser);
+        const response = await profileApi.updateProfile(formData)
 
-        // Use the new updateUserData function to handle storage
-        updateUserData(updatedUser);
+        if (response.success) {
+          console.log("Profile updated successfully:", response.user)
+          const updatedUser = { ...userData, ...response.user }
+          setUserData(updatedUser)
 
-        setShowSuccessMessage(true);
-        setTimeout(() => setShowSuccessMessage(false), 5000);
-        setIsEditing(false);
-      } else {
-        console.warn('Profile update returned unsuccessful response:', response);
-        setErrorMessage(response.message || 'Failed to update profile. Please try again.');
-        setShowErrorMessage(true);
-        setTimeout(() => setShowErrorMessage(false), 5000);
+          // Use the new updateUserData function to handle storage
+          updateUserData(updatedUser)
+
+          setShowSuccessMessage(true)
+          setTimeout(() => setShowSuccessMessage(false), 5000)
+          setIsEditing(false)
+          setHasUnsavedChanges(false)
+        } else {
+          console.warn("Profile update returned unsuccessful response:", response)
+          setErrorMessage(response.message || "Failed to update profile. Please try again.")
+          setShowErrorMessage(true)
+          setTimeout(() => setShowErrorMessage(false), 5000)
+        }
+      } catch (error) {
+        console.error("Profile update failed:", error)
+
+        // Handle authentication errors specifically
+        if (
+          error instanceof Error &&
+          (error.message.includes("Authentication") ||
+            error.message.includes("token") ||
+            error.message.includes("401") ||
+            error.message.includes("403"))
+        ) {
+          setErrorMessage("Your session has expired. Please log in again to save changes.")
+          setShowErrorMessage(true)
+
+          // Auto-redirect to login after showing message
+          setTimeout(() => {
+            clearAuthData()
+            navigate("/auth/login")
+          }, 3000)
+        } else {
+          setErrorMessage(error instanceof Error ? error.message : "Network error. Please try again.")
+          setShowErrorMessage(true)
+        }
+
+        setTimeout(() => setShowErrorMessage(false), 5000)
+      } finally {
+        setIsSubmitting(false)
       }
-    } catch (error) {
-      console.error('Profile update failed:', error);
-      
-      // Handle authentication errors specifically
-      if (error instanceof Error && (
-        error.message.includes('Authentication') || 
-        error.message.includes('token') ||
-        error.message.includes('401') ||
-        error.message.includes('403')
-      )) {
-        setErrorMessage('Your session has expired. Please log in again to save changes.');
-        setShowErrorMessage(true);
-        
-        // Auto-redirect to login after showing message
-        setTimeout(() => {
-          clearAuthData();
-          navigate('/auth/login');
-        }, 3000);
-      } else {
-        setErrorMessage(error instanceof Error ? error.message : 'Network error. Please try again.');
-        setShowErrorMessage(true);
-      }
-      
-      setTimeout(() => setShowErrorMessage(false), 5000);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
+  }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 mx-auto mb-4 bg-blue-600 rounded-2xl flex items-center justify-center">
-            <i className="ri-loader-4-line text-2xl text-white animate-spin"></i>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+        <div className="animate-pulse">
+          {/* Navbar skeleton */}
+          <div className="h-16 bg-white shadow-sm border-b border-gray-200">
+            <div className="container mx-auto px-4 h-full flex items-center justify-between">
+              <div className="h-8 w-32 bg-gray-200 rounded"></div>
+              <div className="h-8 w-24 bg-gray-200 rounded"></div>
+            </div>
           </div>
-          <p className="text-gray-600">Checking authentication...</p>
+
+          {/* Content skeleton */}
+          <div className="container mx-auto px-4 py-8">
+            <div className="max-w-5xl mx-auto grid lg:grid-cols-3 gap-8">
+              {/* Profile card skeleton */}
+              <div className="lg:col-span-1">
+                <div className="bg-white rounded-2xl shadow-xl p-6">
+                  <div className="text-center">
+                    <div className="w-20 h-20 bg-gray-200 rounded-full mx-auto mb-4"></div>
+                    <div className="h-6 w-32 bg-gray-200 rounded mx-auto mb-2"></div>
+                    <div className="h-4 w-48 bg-gray-200 rounded mx-auto mb-4"></div>
+                    <div className="h-10 w-full bg-gray-200 rounded"></div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Form skeleton */}
+              <div className="lg:col-span-2">
+                <div className="bg-white rounded-2xl shadow-xl">
+                  <div className="h-24 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-t-2xl"></div>
+                  <div className="p-8 space-y-6">
+                    {[...Array(6)].map((_, i) => (
+                      <div key={i} className="space-y-2">
+                        <div className="h-4 w-24 bg-gray-200 rounded"></div>
+                        <div className="h-12 w-full bg-gray-200 rounded"></div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    );
+    )
   }
 
   return (
@@ -306,11 +524,9 @@ export default function ProfilePage() {
 
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-5xl mx-auto">
-        
-
           {/* Alert Messages */}
           {showSuccessMessage && (
-            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl shadow-sm">
+            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl shadow-sm animate-in slide-in-from-top-2 duration-300">
               <div className="flex items-center gap-3 text-green-800">
                 <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
                   <i className="ri-check-circle-line text-green-600"></i>
@@ -321,7 +537,7 @@ export default function ProfilePage() {
           )}
 
           {showErrorMessage && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl shadow-sm">
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl shadow-sm animate-in slide-in-from-top-2 duration-300">
               <div className="flex items-center gap-3 text-red-800">
                 <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
                   <i className="ri-error-warning-line text-red-600"></i>
@@ -339,7 +555,11 @@ export default function ProfilePage() {
                 <div className="text-center mb-6">
                   <div className="mb-4">
                     <Avatar
-                      name={userData?.firstName && userData?.lastName ? `${userData.firstName} ${userData.lastName}` : undefined}
+                      name={
+                        userData?.firstName && userData?.lastName
+                          ? `${userData.firstName} ${userData.lastName}`
+                          : undefined
+                      }
                       email={userData?.email}
                       size="xl"
                       className="mx-auto"
@@ -348,10 +568,9 @@ export default function ProfilePage() {
                   <h3 className="text-xl font-bold text-gray-900 mb-1">
                     {userData?.firstName && userData?.lastName
                       ? `${userData.firstName} ${userData.lastName}`
-                      : 'User Profile'
-                    }
+                      : "User Profile"}
                   </h3>
-                  <p className="text-gray-600 mb-4">{userData?.email || 'No email provided'}</p>
+                  <p className="text-gray-600 mb-4">{userData?.email || "No email provided"}</p>
 
                   {!isEditing && (
                     <Button variant="primary" size="md" onClick={handleEdit} fullWidth>
@@ -359,9 +578,60 @@ export default function ProfilePage() {
                       Edit Profile
                     </Button>
                   )}
+
+                  {isEditing && hasUnsavedChanges && (
+                    <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                      <div className="flex items-center gap-2 text-amber-800">
+                        <i className="ri-information-line text-amber-600"></i>
+                        <span className="text-sm font-medium">Unsaved changes</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-700">Profile Completion</span>
+                    <span className="text-sm text-gray-600">
+                      {Math.round(
+                        (Object.values({
+                          firstName: userData?.firstName,
+                          lastName: userData?.lastName,
+                          email: userData?.email,
+                          phone: userData?.phone,
+                          address: userData?.address,
+                          city: userData?.city,
+                          state: userData?.state,
+                          zipCode: userData?.zipCode,
+                        }).filter(Boolean).length /
+                          8) *
+                          100,
+                      )}
+                      %
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-gradient-to-r from-blue-500 to-indigo-600 h-2 rounded-full transition-all duration-300"
+                      style={{
+                        width: `${Math.round(
+                          (Object.values({
+                            firstName: userData?.firstName,
+                            lastName: userData?.lastName,
+                            email: userData?.email,
+                            phone: userData?.phone,
+                            address: userData?.address,
+                            city: userData?.city,
+                            state: userData?.state,
+                            zipCode: userData?.zipCode,
+                          }).filter(Boolean).length /
+                            8) *
+                            100,
+                        )}%`,
+                      }}
+                    ></div>
+                  </div>
+                </div>
 
                 {/* Logout Button */}
                 <div className="mt-6 pt-6 border-t border-gray-200">
@@ -410,8 +680,8 @@ export default function ProfilePage() {
                           name="firstName"
                           id="firstName"
                           value={fields.firstName.value}
-                          onChange={(e) => setValue('firstName', e.target.value)}
-                          error={fields.firstName.touched ? fields.firstName.error : ''}
+                          onChange={(e) => handleFieldChange("firstName", e.target.value)}
+                          error={fields.firstName.touched ? fields.firstName.error : ""}
                           placeholder="Enter your first name"
                           required
                           disabled={!isEditing}
@@ -423,8 +693,8 @@ export default function ProfilePage() {
                           name="lastName"
                           id="lastName"
                           value={fields.lastName.value}
-                          onChange={(e) => setValue('lastName', e.target.value)}
-                          error={fields.lastName.touched ? fields.lastName.error : ''}
+                          onChange={(e) => handleFieldChange("lastName", e.target.value)}
+                          error={fields.lastName.touched ? fields.lastName.error : ""}
                           placeholder="Enter your last name"
                           required
                           disabled={!isEditing}
@@ -448,26 +718,39 @@ export default function ProfilePage() {
                           name="email"
                           id="email"
                           value={fields.email.value}
-                          onChange={(e) => setValue('email', e.target.value)}
-                          error={fields.email.touched ? fields.email.error : ''}
+                          onChange={(e) => handleFieldChange("email", e.target.value)}
+                          error={fields.email.touched ? fields.email.error : ""}
                           placeholder="Enter your email"
                           required
                           disabled={!isEditing}
                           icon={<i className="ri-mail-line"></i>}
                         />
-                        <Input
-                          label="Phone Number"
-                          type="tel"
-                          name="phone"
-                          id="phone"
-                          value={fields.phone.value}
-                          onChange={(e) => setValue('phone', e.target.value)}
-                          error={fields.phone.touched ? fields.phone.error : ''}
-                          placeholder="Enter your phone number"
-                          required
-                          disabled={!isEditing}
-                          icon={<i className="ri-phone-line"></i>}
-                        />
+                        <div>
+                          <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
+                            <i className="ri-phone-line mr-2 text-green-600"></i>
+                            Phone Number
+                          </label>
+                          <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <i className="ri-phone-line text-gray-400"></i>
+                            </div>
+                            <PhoneInput
+                              id="phone"
+                              international
+                              defaultCountry="PH"
+                              value={fields.phone.value}
+                              onChange={(value) => handleFieldChange("phone", value || "")}
+                              className={`w-full pl-10 pr-4 py-4 border rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all ${
+                                fields.phone.error ? 'border-red-300' : 'border-gray-300'
+                              }`}
+                              placeholder="Enter your phone number"
+                              disabled={!isEditing}
+                            />
+                          </div>
+                          {fields.phone.touched && fields.phone.error && (
+                            <p className="text-red-600 text-sm mt-2">{fields.phone.error}</p>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -485,72 +768,113 @@ export default function ProfilePage() {
                         <div className="p-4 bg-gray-50 rounded-lg">
                           <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
                           <p className="text-gray-900">
-                            {[
-                              fields.state.value,
-                              fields.city.value,
-                              fields.address.value,
-                              fields.zipCode.value
-                            ].filter(Boolean).join(', ') || 'Not provided'}
+                            {[fields.state.value, fields.city.value, fields.address.value, fields.zipCode.value]
+                              .filter(Boolean)
+                              .join(", ") || "Not provided"}
                           </p>
                         </div>
                       ) : (
-                        // When editing: inline layout (Province → City → Barangay → ZIP Code)
-                        <div className="flex gap-4 overflow-x-auto">
-                          <Input
-                            label="Province"
-                            type="text"
-                            name="state"
-                            id="state"
-                            value={fields.state.value}
-                            onChange={(e) => setValue('state', e.target.value)}
-                            error={fields.state.touched ? fields.state.error : ''}
-                            placeholder="Province"
-                            required
-                            disabled={!isEditing}
-                            icon={<i className="ri-map-line"></i>}
-                          />
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Province *
+                            </label>
+                            <div className="relative">
+                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i className="ri-map-line text-gray-400"></i>
+                              </div>
+                              <input
+                                type="text"
+                                id="province"
+                                name="province"
+                                value="Batangas"
+                                className="w-full pl-10 pr-4 py-4 border border-gray-300 rounded-xl bg-gray-50 text-gray-700 cursor-not-allowed"
+                                disabled
+                              />
+                            </div>
+                          </div>
 
-                          <Input
-                            label="City / Municipality"
-                            type="text"
-                            name="city"
-                            id="city"
-                            value={fields.city.value}
-                            onChange={(e) => setValue('city', e.target.value)}
-                            error={fields.city.touched ? fields.city.error : ''}
-                            placeholder="City"
-                            required
-                            disabled={!isEditing}
-                            icon={<i className="ri-building-line"></i>}
-                          />
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              City / Municipality *
+                            </label>
+                            <div className="relative">
+                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i className="ri-building-line text-gray-400"></i>
+                              </div>
+                              <input
+                                type="text"
+                                id="city"
+                                name="city"
+                                value="Rosario"
+                                className="w-full pl-10 pr-4 py-4 border border-gray-300 rounded-xl bg-gray-50 text-gray-700 cursor-not-allowed"
+                                disabled
+                              />
+                            </div>
+                          </div>
 
                           <Select
-                            label="Barangay"
+                            label="Barangay *"
                             name="address"
                             id="address"
                             value={fields.address.value}
-                            onChange={(e) => setValue('address', e.target.value)}
-                            error={fields.address.touched ? fields.address.error : ''}
+                            onChange={(e) => handleFieldChange("address", e.target.value)}
+                            error={fields.address.touched ? fields.address.error : ""}
                             required
                             disabled={!isEditing}
-                            options={rosarioBarangays.map(b => ({ value: b.name, label: b.name }))}
+                            icon="ri-building-line"
+                            options={rosarioBarangays.map((b) => ({ value: b.name, label: b.name }))}
                           />
 
-                          <Input
-                            label="ZIP Code"
-                            type="text"
-                            name="zipCode"
-                            id="zipCode"
-                            value={fields.zipCode.value}
-                            onChange={(e) => setValue('zipCode', e.target.value)}
-                            error={fields.zipCode.touched ? fields.zipCode.error : ''}
-                            placeholder="ZIP"
-                            required
-                            disabled={!isEditing}
-                            icon={<i className="ri-mail-line"></i>}
-                          />
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              ZIP Code *
+                            </label>
+                            <div className="relative">
+                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i className="ri-mail-line text-gray-400"></i>
+                              </div>
+                              <input
+                                type="text"
+                                id="zipCode"
+                                name="zipCode"
+                                value="4225"
+                                className="w-full pl-10 pr-4 py-4 border border-gray-300 rounded-xl bg-gray-50 text-gray-700 cursor-not-allowed"
+                                disabled
+                              />
+                            </div>
+                          </div>
                         </div>
                       )}
+                    </div>
+
+                    {/* Security Section */}
+                    <div className="border-t border-gray-100 pt-8">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                          <i className="ri-lock-line text-red-600"></i>
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900">Security</h3>
+                      </div>
+
+                      <div className="bg-gray-50 rounded-lg p-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <h4 className="font-medium text-gray-900">Change Password</h4>
+                            <p className="text-sm text-gray-600">Update your password to keep your account secure</p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="md"
+                            onClick={() => setShowPasswordModal(true)}
+                            className="border-red-200 text-red-600 hover:bg-red-50"
+                          >
+                            <i className="ri-key-line mr-2"></i>
+                            Change Password
+                          </Button>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Action Buttons */}
@@ -570,7 +894,13 @@ export default function ProfilePage() {
                               </>
                             )}
                           </Button>
-                          <Button type="button" variant="outline" size="lg" onClick={handleCancel} disabled={isSubmitting}>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="lg"
+                            onClick={handleCancel}
+                            disabled={isSubmitting}
+                          >
                             <i className="ri-close-line mr-2"></i>
                             Cancel
                           </Button>
@@ -599,14 +929,101 @@ export default function ProfilePage() {
         </div>
       </div>
 
+      {/* Password Change Modal */}
+      <Modal
+        isOpen={showPasswordModal}
+        onClose={handlePasswordModalClose}
+        title="Change Password"
+        size="md"
+      >
+        <form onSubmit={handlePasswordSubmit} className="space-y-6">
+          <div>
+            <Input
+              label="Current Password"
+              type="password"
+              name="currentPassword"
+              id="currentPassword"
+              value={passwordForm.currentPassword}
+              onChange={(e) => handlePasswordInputChange('currentPassword', e.target.value)}
+              error={passwordErrors.currentPassword}
+              placeholder="Enter your current password"
+              required
+              icon={<i className="ri-lock-line"></i>}
+            />
+          </div>
+
+          <div>
+            <Input
+              label="New Password"
+              type="password"
+              name="newPassword"
+              id="newPassword"
+              value={passwordForm.newPassword}
+              onChange={(e) => handlePasswordInputChange('newPassword', e.target.value)}
+              error={passwordErrors.newPassword}
+              placeholder="Enter your new password"
+              required
+              icon={<i className="ri-key-line"></i>}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Password must be at least 8 characters long and contain uppercase, lowercase, and number.
+            </p>
+          </div>
+
+          <div>
+            <Input
+              label="Confirm New Password"
+              type="password"
+              name="confirmPassword"
+              id="confirmPassword"
+              value={passwordForm.confirmPassword}
+              onChange={(e) => handlePasswordInputChange('confirmPassword', e.target.value)}
+              error={passwordErrors.confirmPassword}
+              placeholder="Confirm your new password"
+              required
+              icon={<i className="ri-key-line"></i>}
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+            <Button
+              type="button"
+              variant="outline"
+              size="md"
+              onClick={handlePasswordModalClose}
+              disabled={isChangingPassword}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="md"
+              disabled={isChangingPassword}
+            >
+              {isChangingPassword ? (
+                <>
+                  <i className="ri-loader-4-line animate-spin mr-2"></i>
+                  Changing...
+                </>
+              ) : (
+                <>
+                  <i className="ri-key-line mr-2"></i>
+                  Change Password
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Logout Confirmation Modal */}
       <LogoutModal
         isOpen={showLogoutModal}
         onClose={handleLogoutCancel}
         onConfirm={handleLogoutConfirm}
-        userData={userData}
         isLoading={isLoggingOut}
       />
     </div>
-  );
+  )
 }

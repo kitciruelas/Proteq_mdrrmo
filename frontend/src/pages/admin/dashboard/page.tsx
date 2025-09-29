@@ -1,6 +1,10 @@
 // ...existing code...
 import React, { useState, useEffect } from 'react';
 import { adminDashboardApi } from '../../../utils/api';
+import BarChart from '../../../components/charts/BarChart';
+import PieChart from '../../../components/charts/PieChart';
+import StackedBarChart from '../../../components/charts/StackedBarChart';
+import LineChart from '../../../components/charts/LineChart';
 
 interface DashboardStats {
   totalIncidents: number;
@@ -19,6 +23,29 @@ interface RecentActivity {
   user_id: number;
 }
 
+interface IncidentTypeData {
+  incident_type: string;
+  count: number;
+}
+
+interface PriorityData {
+  priority: string;
+  count: number;
+}
+
+interface MonthlyIncidentData {
+  month: string;
+  period?: string; // For backward compatibility with new API
+  total_incidents: number;
+  resolved_incidents: number;
+  high_priority_incidents: number;
+}
+
+interface PeakHoursData {
+  hour: number;
+  incident_count: number;
+}
+
 const AdminDashboard: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats>({
     totalIncidents: 0,
@@ -31,6 +58,22 @@ const AdminDashboard: React.FC = () => {
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [incidentTrend, setIncidentTrend] = useState<string | null>(null);
   const [userTrend, setUserTrend] = useState<string | null>(null);
+  const [incidentTypes, setIncidentTypes] = useState<IncidentTypeData[]>([]);
+  const [priorityData, setPriorityData] = useState<PriorityData[]>([]);
+  const [locationIncidents, setLocationIncidents] = useState<Array<{ name: string; [key: string]: string | number }>>([]);
+  const [monthlyIncidents, setMonthlyIncidents] = useState<MonthlyIncidentData[]>([]);
+  const [trendsPeriod, setTrendsPeriod] = useState<'days' | 'weeks' | 'months'>('months');
+  const [trendsLimit, setTrendsLimit] = useState<number>(12);
+  const [peakHoursData, setPeakHoursData] = useState<PeakHoursData[]>([]);
+  const [seasonalData, setSeasonalData] = useState<Array<{
+    period: string;
+    floods?: number;
+    fires?: number;
+    accidents?: number;
+    otherIncidents?: number;
+    allIncidents?: number;
+    total: number;
+  }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,30 +81,99 @@ const AdminDashboard: React.FC = () => {
     fetchDashboardStats();
   }, []);
 
+  // Fetch trends data when filter changes
+  useEffect(() => {
+    fetchTrendsData(trendsPeriod, trendsLimit);
+  }, [trendsPeriod, trendsLimit]);
+
+  // Helper function to format hour data for peak hours chart
+  const formatPeakHoursData = (peakHours: PeakHoursData[]) => {
+    const hourLabels = [
+      '12 AM', '1 AM', '2 AM', '3 AM', '4 AM', '5 AM',
+      '6 AM', '7 AM', '8 AM', '9 AM', '10 AM', '11 AM',
+      '12 PM', '1 PM', '2 PM', '3 PM', '4 PM', '5 PM',
+      '6 PM', '7 PM', '8 PM', '9 PM', '10 PM', '11 PM'
+    ];
+
+    return peakHours.map(item => ({
+      name: hourLabels[item.hour] || `${item.hour}:00`,
+      count: item.incident_count,
+      percentage: 0 // Will be calculated if total is provided
+    }));
+  };
+
+  const fetchTrendsData = async (period: 'days' | 'weeks' | 'months' = 'months', limit: number = 12) => {
+    try {
+      const trendsResponse = await adminDashboardApi.getMonthlyTrends(period, limit);
+      if (trendsResponse.success) {
+        // Map the API response to the expected interface format
+        const mappedData = trendsResponse.trendsData.map(item => ({
+          month: item.period, // Use period as month for compatibility
+          period: item.period,
+          total_incidents: item.total_incidents,
+          resolved_incidents: item.resolved_incidents,
+          high_priority_incidents: item.high_priority_incidents
+        }));
+        setMonthlyIncidents(mappedData);
+      }
+    } catch (error) {
+      console.warn('Failed to fetch trends data:', error);
+      setMonthlyIncidents([]);
+    }
+  };
+
   const fetchDashboardStats = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const response = await adminDashboardApi.getStats();
+      // Fetch stats, overview, and analytics data
+      const [statsResponse, overviewResponse, analyticsResponse] = await Promise.all([
+        adminDashboardApi.getStats(),
+        adminDashboardApi.getOverview(),
+        adminDashboardApi.getAnalytics()
+      ]);
 
-      if (response.success) {
+      // Fetch trends data with current filter settings
+      await fetchTrendsData(trendsPeriod, trendsLimit);
+
+      // Try to fetch location data, but don't fail if it doesn't work
+      let locationResponse = null;
+      try {
+        locationResponse = await adminDashboardApi.getLocationIncidents();
+      } catch (error) {
+        console.warn('Location incidents endpoint not available, using fallback data:', error);
+        // Set empty data as fallback
+        locationResponse = { success: true, locationIncidents: [] };
+      }
+
+      // Try to fetch seasonal patterns data, but don't fail if it doesn't work
+      let seasonalResponse = null;
+      try {
+        seasonalResponse = await adminDashboardApi.getSeasonalPatterns();
+      } catch (error) {
+        console.warn('Seasonal patterns endpoint not available, using fallback data:', error);
+        // Set empty data as fallback
+        seasonalResponse = { success: true, seasonalData: [] };
+      }
+
+      if (statsResponse.success) {
         setStats({
-          totalIncidents: response.stats.incidents.total_incidents,
-          activeIncidents: response.stats.incidents.active_incidents,
-          totalUsers: response.stats.users.total_users,
-          totalStaff: response.stats.staff.total_staff,
-          totalAlerts: response.stats.alerts.total_alerts,
-          activeAlerts: response.stats.alerts.active_alerts
+          totalIncidents: statsResponse.stats.incidents.total_incidents,
+          activeIncidents: statsResponse.stats.incidents.active_incidents,
+          totalUsers: statsResponse.stats.users.total_users,
+          totalStaff: statsResponse.stats.staff.total_staff,
+          totalAlerts: statsResponse.stats.alerts.total_alerts,
+          activeAlerts: statsResponse.stats.alerts.active_alerts
         });
 
-        setRecentActivity(response.recentActivity || []);
+        setRecentActivity(statsResponse.recentActivity || []);
 
         // Set trends based on response data
-        if (response.trends) {
+        if (statsResponse.trends) {
           // Example: calculate percentage change for incidents and users
-          const incidentsTrendData = response.trends.incidents;
-          const usersTrendData = response.trends.users;
+          const incidentsTrendData = statsResponse.trends.incidents;
+          const usersTrendData = statsResponse.trends.users;
 
           if (incidentsTrendData && incidentsTrendData.length >= 2) {
             const latest = incidentsTrendData[incidentsTrendData.length - 1].count;
@@ -86,6 +198,34 @@ const AdminDashboard: React.FC = () => {
         }
       } else {
         setError('Failed to fetch dashboard statistics');
+      }
+
+      // Set incident types data from overview response
+      if (overviewResponse.success) {
+        setIncidentTypes(overviewResponse.overview.incidentTypes || []);
+      }
+
+      // Set priority data from analytics response
+      if (analyticsResponse.success) {
+        setPriorityData(analyticsResponse.analytics.incidentPriority || []);
+        setMonthlyIncidents(analyticsResponse.analytics.monthlyIncidents || []);
+        setPeakHoursData(analyticsResponse.analytics.peakHours || []);
+      }
+
+      // Set location incidents data from location response
+      if (locationResponse && locationResponse.success) {
+        setLocationIncidents(locationResponse.locationIncidents || []);
+      } else {
+        // Set empty data if location response failed
+        setLocationIncidents([]);
+      }
+
+      // Set seasonal patterns data from seasonal response
+      if (seasonalResponse && seasonalResponse.success) {
+        setSeasonalData(seasonalResponse.seasonalData || []);
+      } else {
+        // Set empty data if seasonal response failed
+        setSeasonalData([]);
       }
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
@@ -211,6 +351,207 @@ const AdminDashboard: React.FC = () => {
         />
       </div>
 
+      {/* Charts Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Most Common Incident Types Chart */}
+        <BarChart
+          data={incidentTypes.map(item => ({
+            name: item.incident_type,
+            count: item.count
+          }))}
+          title="Most Common Incident Types"
+          dataKey="count"
+          color="#ef4444"
+          height={300}
+        />
+
+        {/* Priority Level Distribution Chart */}
+        <PieChart
+          data={priorityData.map(item => ({
+            name: item.priority,
+            count: item.count
+          }))}
+          title="Priority Level Distribution"
+          dataKey="count"
+          nameKey="name"
+          height={300}
+          colors={{
+            low: "#10B981",
+            moderate: "#FFD966",
+            high: "#E67E22",
+            critical: "#EF4444"
+          }}
+        />
+      </div>
+
+      {/* Monthly Trends Line Chart with Filter */}
+      <div className="grid grid-cols-1 gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Incident Trends Analysis</h3>
+            <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">Period:</label>
+                <select
+                  value={trendsPeriod}
+                  onChange={(e) => setTrendsPeriod(e.target.value as 'days' | 'weeks' | 'months')}
+                  className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="days">Days</option>
+                  <option value="weeks">Weeks</option>
+                  <option value="months">Months</option>
+                </select>
+              </div>
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">Last:</label>
+                <select
+                  value={trendsLimit}
+                  onChange={(e) => setTrendsLimit(parseInt(e.target.value))}
+                  className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value={7}>7</option>
+                  <option value={12}>12</option>
+                  <option value={24}>24</option>
+                  <option value={30}>30</option>
+                </select>
+                <span className="text-sm text-gray-600">{trendsPeriod}</span>
+              </div>
+              <button
+                onClick={() => fetchTrendsData(trendsPeriod, trendsLimit)}
+                className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors"
+              >
+                <i className="ri-refresh-line mr-1"></i>
+                Refresh
+              </button>
+            </div>
+          </div>
+          <LineChart
+            data={monthlyIncidents.map(item => ({
+              date: item.month || item.period || 'Unknown',
+              count: item.total_incidents || 0
+            }))}
+            title={`Incident Trends (Last ${trendsLimit} ${trendsPeriod})`}
+            color="#10b981"
+            height={350}
+          />
+        </div>
+        {monthlyIncidents.length === 0 && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <i className="ri-information-line text-green-500 text-lg mr-3"></i>
+              <div>
+                <h4 className="text-green-800 font-medium">Trends Analytics</h4>
+                <p className="text-green-600 text-sm mt-1">
+                  This line chart shows incident volume trends with customizable time periods.
+                  Use the filters above to view data by days, weeks, or months. It helps identify patterns and peak periods.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Peak Hours Analysis */}
+      <div className="grid grid-cols-1 gap-6">
+        <BarChart
+          data={formatPeakHoursData(peakHoursData)}
+          title="Peak Hours Analysis (Last 30 Days)"
+          dataKey="count"
+          color="#f59e0b"
+          height={350}
+        />
+        {peakHoursData.length === 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <i className="ri-information-line text-amber-500 text-lg mr-3"></i>
+              <div>
+                <h4 className="text-amber-800 font-medium">Peak Hours Analysis</h4>
+                <p className="text-amber-600 text-sm mt-1">
+                  This bar chart shows incident distribution by hour of day over the past 30 days.
+                  It helps identify peak hours when incidents are most likely to occur, enabling better resource allocation.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Barangay-based Risk Analysis Chart */}
+      <div className="grid grid-cols-1 gap-6">
+        {(() => {
+          // Debug: Log the actual data structure
+          console.log('Location incidents data:', locationIncidents);
+
+          // Get all possible incident type keys from the data
+          const allKeys: string[] = [];
+          locationIncidents.forEach(item => {
+            Object.keys(item).forEach(key => {
+              if (key !== 'name' && !allKeys.includes(key)) {
+                allKeys.push(key);
+              }
+            });
+          });
+
+          console.log('Available incident type keys:', allKeys);
+
+          return (
+            <StackedBarChart
+              data={locationIncidents.length > 0 ? locationIncidents : []}
+              title="Risky Areas by Barangay"
+              stackKeys={allKeys}
+              height={400}
+            />
+          );
+        })()}
+        {locationIncidents.length === 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <i className="ri-information-line text-blue-500 text-lg mr-3"></i>
+              <div>
+                <h4 className="text-blue-800 font-medium">Barangay-based Risk Analysis</h4>
+                <p className="text-blue-600 text-sm mt-1">
+                  This chart shows incident distribution by barangay. Barangay names are extracted from incident descriptions.
+                  If no data appears, ensure incidents have barangay information in their descriptions or check the backend server.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Seasonal Patterns Analysis Chart */}
+      <div className="grid grid-cols-1 gap-6">
+        <BarChart
+          data={seasonalData.map(item => ({
+            name: item.period,
+            floods: item.floods || 0,
+            fires: item.fires || 0,
+            accidents: item.accidents || 0,
+            otherIncidents: item.otherIncidents || 0,
+            allIncidents: item.allIncidents || 0
+          }))}
+          title="Seasonal Incident Patterns"
+          stacked={true}
+          stackKeys={['floods', 'fires', 'accidents', 'otherIncidents', 'allIncidents']}
+          height={400}
+        />
+        {seasonalData.length === 0 && (
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <i className="ri-information-line text-purple-500 text-lg mr-3"></i>
+              <div>
+                <h4 className="text-purple-800 font-medium">Seasonal Patterns Analysis</h4>
+                <p className="text-purple-600 text-sm mt-1">
+                  This clustered column chart compares incident patterns across different seasons:
+                  floods during rainy season (June-November), fires during summer (March-May),
+                  and accidents during holiday periods. Data covers the last 2 years.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Recent Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Incidents */}
@@ -249,50 +590,10 @@ const AdminDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* System Status */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">System Status</h3>
-          <div className="space-y-4">
-            {[
-              { name: 'Emergency Alert System', status: 'Online', color: 'bg-green-500' },
-              { name: 'GPS Tracking', status: 'Online', color: 'bg-green-500' },
-              { name: 'Communication Network', status: 'Online', color: 'bg-green-500' },
-              { name: 'Database Backup', status: 'Scheduled', color: 'bg-blue-500' }
-            ].map((system, index) => (
-              <div key={index} className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <div className={`w-3 h-3 rounded-full mr-3 ${system.color}`}></div>
-                  <span className="text-gray-900">{system.name}</span>
-                </div>
-                <span className="text-sm text-gray-600">{system.status}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        
       </div>
 
-      {/* Quick Actions */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <button className="flex flex-col items-center p-4 bg-red-50 rounded-lg hover:bg-red-100 transition-colors">
-            <i className="ri-alarm-warning-line text-2xl text-red-600 mb-2"></i>
-            <span className="text-sm font-medium text-red-700">Send Alert</span>
-          </button>
-          <button className="flex flex-col items-center p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors">
-            <i className="ri-map-pin-add-line text-2xl text-blue-600 mb-2"></i>
-            <span className="text-sm font-medium text-blue-700">Add Location</span>
-          </button>
-          <button className="flex flex-col items-center p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors">
-            <i className="ri-user-add-line text-2xl text-green-600 mb-2"></i>
-            <span className="text-sm font-medium text-green-700">Add Staff</span>
-          </button>
-          <button className="flex flex-col items-center p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors">
-            <i className="ri-file-chart-line text-2xl text-purple-600 mb-2"></i>
-            <span className="text-sm font-medium text-purple-700">Generate Report</span>
-          </button>
-        </div>
-      </div>
+      
     </div>
   );
 };

@@ -136,6 +136,103 @@ router.put('/update', authenticateUser, async (req, res) => {
   }
 });
 
+// Change password (authenticated user)
+router.post('/change-password', authenticateUser, async (req, res) => {
+  try {
+    const userId = req.user.user_id;
+    const { currentPassword, newPassword } = req.body;
+
+    console.log('Password change request from user ID:', userId);
+
+    // Validate required fields
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current password and new password are required'
+      });
+    }
+
+    // Validate new password strength
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 8 characters long'
+      });
+    }
+
+    // Get current user password
+    const [users] = await pool.execute(
+      'SELECT password FROM general_users WHERE user_id = ? AND status = 1',
+      [userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const user = users[0];
+    const bcrypt = require('bcrypt');
+
+    // Verify current password
+    let isCurrentPasswordValid = false;
+
+    if (user.password.startsWith('$2y$') || user.password.startsWith('$2b$') || user.password.startsWith('$2a$')) {
+      // Hashed password - use bcrypt compare
+      const hashToCompare = user.password.replace(/^\$2y\$/, '$2b$');
+      isCurrentPasswordValid = await bcrypt.compare(currentPassword, hashToCompare);
+    } else {
+      // Plain text password (for backward compatibility)
+      isCurrentPasswordValid = currentPassword === user.password;
+    }
+
+    if (!isCurrentPasswordValid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current password is incorrect'
+      });
+    }
+
+    // Hash the new password
+    const saltRounds = 10;
+    const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    // Update password
+    await pool.execute(
+      'UPDATE general_users SET password = ?, updated_at = NOW() WHERE user_id = ?',
+      [hashedNewPassword, userId]
+    );
+
+    console.log('Password changed successfully for user ID:', userId);
+
+    // Log password change activity
+    try {
+      const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip || 'unknown';
+      await pool.execute(`
+        INSERT INTO activity_logs (general_user_id, action, details, ip_address, created_at)
+        VALUES (?, 'password_change', ?, ?, NOW())
+      `, [userId, 'Password changed successfully', clientIP]);
+      console.log('✅ Activity logged: password_change');
+    } catch (logError) {
+      console.error('❌ Failed to log password change activity:', logError.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+
+  } catch (error) {
+    console.error('Error changing password:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to change password. Please try again.'
+    });
+  }
+});
+
 // Get user profile by email (admin only - keep for backward compatibility)
 router.get('/:email', async (req, res) => {
   try {

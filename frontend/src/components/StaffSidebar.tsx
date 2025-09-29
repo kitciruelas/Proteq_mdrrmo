@@ -21,6 +21,12 @@ const StaffSidebar: React.FC<StaffSidebarProps> = ({ isOpen, onClose }) => {
       path: '/staff/incidents',
       icon: 'ri-alert-line',
       description: 'View Your Incidents'
+    },
+    {
+      name: 'Incident Map',
+      path: '/staff/incidents/map',
+      icon: 'ri-map-pin-line',
+      description: 'View Incidents on Map'
     }
   ];
 

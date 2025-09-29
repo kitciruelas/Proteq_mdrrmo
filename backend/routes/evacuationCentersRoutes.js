@@ -92,7 +92,12 @@ router.put('/:centerId', authenticateAdmin, async (req, res) => {
     values.push(centerId);
     const sql = `UPDATE evacuation_centers SET ${fields.join(', ')} WHERE center_id = ?`;
     await pool.execute(sql, values);
-    
+
+    const [rows] = await pool.execute('SELECT * FROM evacuation_centers WHERE center_id = ?', [centerId]);
+    if (!rows[0]) {
+      return res.status(404).json({ success: false, message: 'Center not found' });
+    }
+
     // Log the center update
     try {
       const { created_by } = req.body;
@@ -105,15 +110,11 @@ router.put('/:centerId', authenticateAdmin, async (req, res) => {
       await pool.execute(`
         INSERT INTO activity_logs (admin_id, action, details, created_at)
         VALUES (?, 'evacuation_center_update', ?, NOW())
-      `, [finalCreatedBy, `Updated evacuation center (ID: ${centerId})`]);
+      `, [finalCreatedBy, `Updated evavcuation center: ${rows[0].name}`]);
     } catch (logError) {
       console.warn('Failed to log evacuation center update activity:', logError.message);
     }
-    
-    const [rows] = await pool.execute('SELECT * FROM evacuation_centers WHERE center_id = ?', [centerId]);
-    if (!rows[0]) {
-      return res.status(404).json({ success: false, message: 'Center not found' });
-    }
+
     res.json({ success: true, data: rows[0] });
   } catch (error) {
     console.error('Error updating evacuation center:', error);
@@ -125,11 +126,12 @@ router.put('/:centerId', authenticateAdmin, async (req, res) => {
 router.delete('/:centerId', authenticateAdmin, async (req, res) => {
   const { centerId } = req.params;
   try {
+    const [centerRows] = await pool.execute('SELECT name FROM evacuation_centers WHERE center_id = ?', [centerId]);
     const [result] = await pool.execute('DELETE FROM evacuation_centers WHERE center_id = ?', [centerId]);
     if (result.affectedRows === 0) {
       return res.status(404).json({ success: false, message: 'Center not found' });
     }
-    
+
     // Log the center deletion
     try {
       const { created_by } = req.body;
@@ -142,11 +144,11 @@ router.delete('/:centerId', authenticateAdmin, async (req, res) => {
       await pool.execute(`
         INSERT INTO activity_logs (admin_id, action, details, created_at)
         VALUES (?, 'evacuation_center_delete', ?, NOW())
-      `, [finalCreatedBy, `Deleted evacuation center (ID: ${centerId})`]);
+      `, [finalCreatedBy, `Deleted evacuation center: ${centerRows[0].name}`]);
     } catch (logError) {
       console.warn('Failed to log evacuation center deletion activity:', logError.message);
     }
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting evacuation center:', error);
@@ -182,7 +184,9 @@ router.post('/:centerId/resources', authenticateAdmin, async (req, res) => {
       'INSERT INTO evacuation_resources (center_id, type, name, quantity, picture) VALUES (?, ?, ?, ?, ?)',
       [centerId, type, name, quantity, picture]
     );
-    
+
+    const [centerRows] = await pool.execute('SELECT name FROM evacuation_centers WHERE center_id = ?', [centerId]);
+
     // Log the resource creation
     try {
       const { created_by } = req.body;
@@ -195,7 +199,7 @@ router.post('/:centerId/resources', authenticateAdmin, async (req, res) => {
       await pool.execute(`
         INSERT INTO activity_logs (admin_id, action, details, created_at)
         VALUES (?, 'evacuation_resource_create', ?, NOW())
-      `, [finalCreatedBy, `Created evacuation resource: ${name} (ID: ${result.insertId}) for center ${centerId}`]);
+      `, [finalCreatedBy, `Created evacuation resource: ${name} (ID: ${result.insertId}) for center ${centerRows[0].name}`]);
     } catch (logError) {
       console.warn('Failed to log evacuation resource creation activity:', logError.message);
     }
@@ -225,7 +229,9 @@ router.put('/:centerId/resources/:resourceId', authenticateAdmin, async (req, re
     values.push(centerId, resourceId);
     const sql = `UPDATE evacuation_resources SET ${fields.join(', ')} WHERE center_id = ? AND resource_id = ?`;
     await pool.execute(sql, values);
-    
+
+    const [centerRows] = await pool.execute('SELECT name FROM evacuation_centers WHERE center_id = ?', [centerId]);
+
     // Log the resource update
     try {
       const { created_by } = req.body;
@@ -238,7 +244,7 @@ router.put('/:centerId/resources/:resourceId', authenticateAdmin, async (req, re
       await pool.execute(`
         INSERT INTO activity_logs (admin_id, action, details, created_at)
         VALUES (?, 'evacuation_resource_update', ?, NOW())
-      `, [finalCreatedBy, `Updated evacuation resource (ID: ${resourceId}) for center ${centerId}`]);
+      `, [finalCreatedBy, `Updated evacuation resource (ID: ${resourceId}) for center ${centerRows[0].name}`]);
     } catch (logError) {
       console.warn('Failed to log evacuation resource update activity:', logError.message);
     }
@@ -276,11 +282,12 @@ router.post('/:centerId/resources/:resourceId/picture', authenticateAdmin, uploa
 router.delete('/:centerId/resources/:resourceId', authenticateAdmin, async (req, res) => {
   const { centerId, resourceId } = req.params;
   try {
+    const [centerRows] = await pool.execute('SELECT name FROM evacuation_centers WHERE center_id = ?', [centerId]);
     const [result] = await pool.execute('DELETE FROM evacuation_resources WHERE center_id = ? AND resource_id = ?', [centerId, resourceId]);
     if (result.affectedRows === 0) {
       return res.status(404).json({ success: false, message: 'Resource not found' });
     }
-    
+
     // Log the resource deletion
     try {
       const { created_by } = req.body;
@@ -293,11 +300,11 @@ router.delete('/:centerId/resources/:resourceId', authenticateAdmin, async (req,
       await pool.execute(`
         INSERT INTO activity_logs (admin_id, action, details, created_at)
         VALUES (?, 'evacuation_resource_delete', ?, NOW())
-      `, [finalCreatedBy, `Deleted evacuation resource (ID: ${resourceId}) from center ${centerId}`]);
+      `, [finalCreatedBy, `Deleted evacuation resource (ID: ${resourceId}) from center ${centerRows[0].name}`]);
     } catch (logError) {
       console.warn('Failed to log evacuation resource deletion activity:', logError.message);
     }
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting evacuation resource:', error);

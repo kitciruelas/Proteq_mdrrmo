@@ -43,7 +43,8 @@ interface Staff {
   phone: string;
   position: string;
   department: string;
-  status: 'active' | 'inactive' | 'on_leave';
+  status: 'active' | 'inactive';
+  availability: 'available' | 'busy' | 'off-duty';
   last_login: string | null;
   created_at: string;
   updated_at: string;
@@ -65,6 +66,7 @@ const StaffManagement: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [availabilityFilter, setAvailabilityFilter] = useState<string>('all');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [teamFilter, setTeamFilter] = useState<string>('all');
   const [showStaffModal, setShowStaffModal] = useState(false);
@@ -80,7 +82,7 @@ const StaffManagement: React.FC = () => {
   useEffect(() => {
     fetchStaff();
     fetchTeams();
-  }, [currentPage, searchTerm, statusFilter, roleFilter, teamFilter]);
+  }, [currentPage, searchTerm, statusFilter, availabilityFilter, roleFilter, teamFilter]);
 
   const fetchStaff = async () => {
     try {
@@ -91,6 +93,7 @@ const StaffManagement: React.FC = () => {
         page: currentPage.toString(),
         search: searchTerm,
         status: statusFilter,
+        availability: availabilityFilter,
         role: roleFilter,
         team_id: teamFilter,
       });
@@ -145,11 +148,11 @@ const StaffManagement: React.FC = () => {
         },
         body: JSON.stringify({ status: newStatus }),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
-        setStaff(prev => prev.map(member => 
+        setStaff(prev => prev.map(member =>
           member.id === staffId ? { ...member, status: newStatus } : member
         ));
         showToast({ type: 'success', message: 'Staff status updated' });
@@ -163,12 +166,41 @@ const StaffManagement: React.FC = () => {
     }
   };
 
+  const handleAvailabilityChange = async (staffId: number, newAvailability: Staff['availability']) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/staff/${staffId}/availability`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('userInfo') ? JSON.parse(localStorage.getItem('userInfo')!).token : ''}`
+        },
+        body: JSON.stringify({ availability: newAvailability }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setStaff(prev => prev.map(member =>
+          member.id === staffId ? { ...member, availability: newAvailability } : member
+        ));
+        showToast({ type: 'success', message: 'Staff availability updated' });
+      } else {
+        console.error('Failed to update staff availability:', data.message);
+        showToast({ type: 'error', message: 'Failed to update staff availability' });
+      }
+    } catch (error) {
+      console.error('Error updating staff availability:', error);
+      showToast({ type: 'error', message: 'Error updating staff availability' });
+    }
+  };
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     phone: '',
     position: '',
     department: '',
+    availability: 'available',
     team_id: ''
   });
 
@@ -180,6 +212,7 @@ const StaffManagement: React.FC = () => {
       phone: '',
       position: '',
       department: '',
+      availability: 'available',
       team_id: ''
     });
     setIsEditing(true);
@@ -194,6 +227,7 @@ const StaffManagement: React.FC = () => {
       phone: staffMember.phone,
       position: staffMember.position,
       department: staffMember.department,
+      availability: staffMember.availability,
       team_id: staffMember.team_id?.toString() || ''
     });
     setIsEditing(true);
@@ -219,7 +253,8 @@ const StaffManagement: React.FC = () => {
       // Prepare the data - convert empty string team_id to null
       const requestData: any = {
         ...formData,
-        team_id: formData.team_id === '' ? null : parseInt(formData.team_id)
+        team_id: formData.team_id === '' ? null : parseInt(formData.team_id),
+        availability: formData.availability
       };
       
       console.log('Sending staff data:', requestData);
@@ -305,7 +340,15 @@ const StaffManagement: React.FC = () => {
     switch (status) {
       case 'active': return 'bg-green-100 text-green-800';
       case 'inactive': return 'bg-gray-100 text-gray-800';
-      case 'on_leave': return 'bg-yellow-100 text-yellow-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getAvailabilityColor = (availability: Staff['availability']) => {
+    switch (availability) {
+      case 'available': return 'bg-green-100 text-green-800';
+      case 'busy': return 'bg-yellow-100 text-yellow-800';
+      case 'off-duty': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
@@ -387,6 +430,23 @@ const StaffManagement: React.FC = () => {
           </select>
         </div>
         <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Availability</label>
+          <select
+            name="availability"
+            value={formData.availability}
+            onChange={handleInputChange}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            required
+          >
+            <option value="available">Available</option>
+            <option value="busy">Busy</option>
+            <option value="off-duty">Off Duty</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Team</label>
           <select
             name="team_id"
@@ -431,6 +491,10 @@ const StaffManagement: React.FC = () => {
           <p className="text-sm text-gray-900">{selectedStaff.department}</p>
         </div>
         <div>
+          <label className="block text-sm font-medium text-gray-700">Availability</label>
+          <p className="text-sm text-gray-900">{selectedStaff.availability.replace('-', ' ').toUpperCase()}</p>
+        </div>
+        <div>
           <label className="block text-sm font-medium text-gray-700">Team</label>
           <p className="text-sm text-gray-900">{selectedStaff.team_name || 'No Team'}</p>
         </div>
@@ -459,6 +523,7 @@ const StaffManagement: React.FC = () => {
     { key: 'phone', label: 'Phone' },
     { key: 'position', label: 'Position' },
     { key: 'department', label: 'Department' },
+    { key: 'availability', label: 'Availability' },
     { key: 'team_name', label: 'Team' },
   ];
 
@@ -581,9 +646,9 @@ const StaffManagement: React.FC = () => {
               <i className="ri-user-unfollow-line text-yellow-600"></i>
             </div>
             <div>
-              <p className="text-sm text-gray-600">On Leave</p>
+              <p className="text-sm text-gray-600">Busy</p>
               <p className="text-xl font-bold text-gray-900">
-                {staff.filter(s => s.status === 'on_leave').length}
+                {staff.filter(s => s.availability === 'busy').length}
               </p>
             </div>
           </div>
@@ -625,7 +690,16 @@ const StaffManagement: React.FC = () => {
               <option value="all">All Status</option>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
-              <option value="on_leave">On Leave</option>
+            </select>
+            <select
+              value={availabilityFilter}
+              onChange={(e) => setAvailabilityFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="all">All Availability</option>
+              <option value="available">Available</option>
+              <option value="busy">Busy</option>
+              <option value="off-duty">Off Duty</option>
             </select>
             <select
               value={teamFilter}
@@ -661,6 +735,9 @@ const StaffManagement: React.FC = () => {
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Availability
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -702,6 +779,11 @@ const StaffManagement: React.FC = () => {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(member.status)}`}>
                       {member.status.replace('_', ' ').toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getAvailabilityColor(member.availability)}`}>
+                      {member.availability.replace('-', ' ').toUpperCase()}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -749,7 +831,7 @@ const StaffManagement: React.FC = () => {
               <button
                 onClick={() => setShowStaffModal(false)}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
+                >
                 <i className="ri-close-line text-xl"></i>
               </button>
             </div>

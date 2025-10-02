@@ -61,15 +61,16 @@ const exportColumns: ExportColumn[] = [
   }
 ];
 
+
+
 const ActivityLogs: React.FC = () => {
   const { showToast } = useToast();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [userTypeFilter, setUserTypeFilter] = useState<string>('all');
-  const [actionFilter, setActionFilter] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<string>('all');
+  const [timeFilter, setTimeFilter] = useState('all');
+
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalLogs, setTotalLogs] = useState(0);
@@ -80,46 +81,43 @@ const ActivityLogs: React.FC = () => {
   useEffect(() => {
     fetchActivityLogs();
     fetchActivityStats();
-  }, [currentPage, userTypeFilter, actionFilter, dateFilter]);
+  }, [currentPage, searchTerm, timeFilter]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, timeFilter]);
 
   const fetchActivityLogs = async () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const params: any = {
         page: currentPage,
-        limit: 20
+        limit: 20,
+        search: searchTerm.trim()
       };
-      
-      if (userTypeFilter !== 'all') {
-        params.user_type = userTypeFilter;
-      }
-      
-      if (actionFilter !== 'all') {
-        params.action = actionFilter;
-      }
-      
-      if (dateFilter !== 'all') {
+
+      if (timeFilter !== 'all') {
         const now = new Date();
-        switch (dateFilter) {
-          case 'today':
-            params.date_from = now.toISOString().split('T')[0];
-            params.date_to = now.toISOString().split('T')[0];
-            break;
-          case 'week':
-            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            params.date_from = weekAgo.toISOString().split('T')[0];
-            params.date_to = now.toISOString().split('T')[0];
-            break;
-          case 'month':
-            const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-            params.date_from = monthAgo.toISOString().split('T')[0];
-            params.date_to = now.toISOString().split('T')[0];
-            break;
+        if (timeFilter === 'today') {
+          const today = now.toISOString().split('T')[0];
+          params.date_from = today;
+          params.date_to = today;
+        } else if (timeFilter === 'week') {
+          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          params.date_from = weekAgo.toISOString().split('T')[0];
+          params.date_to = now.toISOString().split('T')[0];
+        } else if (timeFilter === 'month') {
+          const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          params.date_from = monthAgo.toISOString().split('T')[0];
+          params.date_to = now.toISOString().split('T')[0];
         }
       }
-      
+
+
+
       console.log('🔍 Fetching activity logs with params:', params);
       
       const response = await activityLogsApi.getLogs(params);
@@ -176,34 +174,24 @@ const ActivityLogs: React.FC = () => {
   const fetchAllActivityLogs = async () => {
     try {
       const params: any = {
-        limit: 1000000 // Very high limit to get all logs
+        limit: 1000000, // Very high limit to get all logs
+        search: searchTerm.trim()
       };
 
-      if (userTypeFilter !== 'all') {
-        params.user_type = userTypeFilter;
-      }
-
-      if (actionFilter !== 'all') {
-        params.action = actionFilter;
-      }
-
-      if (dateFilter !== 'all') {
+      if (timeFilter !== 'all') {
         const now = new Date();
-        switch (dateFilter) {
-          case 'today':
-            params.date_from = now.toISOString().split('T')[0];
-            params.date_to = now.toISOString().split('T')[0];
-            break;
-          case 'week':
-            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            params.date_from = weekAgo.toISOString().split('T')[0];
-            params.date_to = now.toISOString().split('T')[0];
-            break;
-          case 'month':
-            const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-            params.date_from = monthAgo.toISOString().split('T')[0];
-            params.date_to = now.toISOString().split('T')[0];
-            break;
+        if (timeFilter === 'today') {
+          const today = now.toISOString().split('T')[0];
+          params.date_from = today;
+          params.date_to = today;
+        } else if (timeFilter === 'week') {
+          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          params.date_from = weekAgo.toISOString().split('T')[0];
+          params.date_to = now.toISOString().split('T')[0];
+        } else if (timeFilter === 'month') {
+          const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          params.date_from = monthAgo.toISOString().split('T')[0];
+          params.date_to = now.toISOString().split('T')[0];
         }
       }
 
@@ -212,17 +200,8 @@ const ActivityLogs: React.FC = () => {
       const response = await activityLogsApi.getLogs(params);
 
       if (response.success) {
-        // Apply client-side search filter to the full dataset
-        const allLogs = response.logs.filter(log => {
-          const matchesSearch = log.user_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                               log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                               log.details.toLowerCase().includes(searchTerm.toLowerCase());
-
-          return matchesSearch;
-        });
-
-        console.log('✅ Successfully fetched', allLogs.length, 'filtered logs for export');
-        return allLogs;
+        console.log('✅ Successfully fetched', response.logs.length, 'logs for export');
+        return response.logs;
       } else {
         const errorMsg = response.message || 'Failed to fetch all activity logs';
         console.error('❌ API returned error:', errorMsg);
@@ -253,16 +232,11 @@ const ActivityLogs: React.FC = () => {
       // Build dynamic title based on filters
       let title = 'Activity Logs';
       const filterParts = [];
-      if (userTypeFilter !== 'all') filterParts.push(`User Type: ${userTypeFilter.charAt(0).toUpperCase() + userTypeFilter.slice(1)}`);
-      if (actionFilter !== 'all') filterParts.push(`Action: ${actionFilter.charAt(0).toUpperCase() + actionFilter.slice(1)}`);
-      if (dateFilter !== 'all') {
-        let dateLabel = '';
-        if (dateFilter === 'today') dateLabel = 'Today';
-        else if (dateFilter === 'week') dateLabel = 'Last Week';
-        else if (dateFilter === 'month') dateLabel = 'Last Month';
-        filterParts.push(`Date: ${dateLabel}`);
-      }
       if (searchTerm.trim()) filterParts.push(`Search: "${searchTerm.trim()}"`);
+      if (timeFilter !== 'all') {
+        const label = timeFilter === 'today' ? 'Today' : timeFilter === 'week' ? 'Last Week' : timeFilter === 'month' ? 'Last Month' : timeFilter;
+        filterParts.push(`Time: ${label}`);
+      }
       if (filterParts.length > 0) {
         title += ' (' + filterParts.join(', ') + ')';
       } else {
@@ -296,13 +270,7 @@ const ActivityLogs: React.FC = () => {
   // Confirm export to PDF after preview
   const handleConfirmExportPDF = () => handleExport('pdf');
 
-  const filteredLogs = logs.filter(log => {
-    const matchesSearch = log.user_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         log.details.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    return matchesSearch;
-  });
+
 
   const getUserTypeColor = (userType: ActivityLog['user_type']) => {
     switch (userType) {
@@ -434,52 +402,35 @@ const ActivityLogs: React.FC = () => {
 
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="relative">
-            <i className="ri-search-line absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
-            <input
-              type="text"
-              placeholder="Search activities..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-          <select
-            value={userTypeFilter}
-            onChange={(e) => setUserTypeFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="all">All User Types</option>
-            <option value="admin">Admin</option>
-            <option value="staff">Staff</option>
-            <option value="user">User</option>
-          </select>
-          <select
-            value={actionFilter}
-            onChange={(e) => setActionFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="all">All Actions</option>
-            <option value="create">Create Actions</option>
-            <option value="update">Update Actions</option>
-            <option value="delete">Delete Actions</option>
-            <option value="login">Login Actions</option>
-            <option value="alert">Alert Actions</option>
-          </select>
-          <select
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="all">All Time</option>
-            <option value="today">Today</option>
-            <option value="week">Last Week</option>
-            <option value="month">Last Month</option>
-          </select>
+        <div className="flex flex-col md:flex-row gap-4">
+        <div className="relative">
+  <i className="ri-search-line absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+  <input
+    type="text"
+    placeholder="Search activities..."
+    value={searchTerm}
+    onChange={(e) => setSearchTerm(e.target.value)}
+    className="pl-10 pr-4 py-2 w-96 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+  />
+</div>
+
+<div className="relative">
+  <i className="ri-time-line absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+  <select
+    value={timeFilter}
+    onChange={(e) => setTimeFilter(e.target.value)}
+    className="pl-10 pr-4 py-2 w-48 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+  >
+    <option value="all">All Time</option>
+    <option value="today">Today</option>
+    <option value="week">Last Week</option>
+    <option value="month">Last Month</option>
+  </select>
+</div>
+
         </div>
         <div className="mt-4 text-sm text-gray-600">
-          Showing {filteredLogs.length} of {totalLogs} activities
+          Showing {logs.length} of {totalLogs} activities
         </div>
       </div>
 
@@ -491,7 +442,7 @@ const ActivityLogs: React.FC = () => {
           </div>
         ) : (
           <div className="divide-y divide-gray-200">
-            {filteredLogs.map((log) => (
+            {logs.map((log) => (
               <div key={log.id} className="p-6 hover:bg-gray-50">
                 <div className="flex items-start space-x-4">
                   <div className="flex-shrink-0">
@@ -573,7 +524,7 @@ const ActivityLogs: React.FC = () => {
         </div>
       )}
 
-      {filteredLogs.length === 0 && !loading && (
+      {logs.length === 0 && !loading && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
           <i className="ri-history-line text-4xl text-gray-400 mb-4"></i>
           <h3 className="text-lg font-medium text-gray-900 mb-2">No activities found</h3>

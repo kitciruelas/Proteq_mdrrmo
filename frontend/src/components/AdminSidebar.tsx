@@ -10,7 +10,7 @@ interface SidebarItem {
   children?: SidebarItem[];
 }
 
-interface AdminSidebarProps {
+interface AdminSidebarProps { 
   collapsed?: boolean;
   onToggleCollapse?: () => void;
 }
@@ -109,6 +109,12 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ collapsed = false, onToggle
     },
 
       {
+      id: 'welfare',
+      label: 'Welfare Check',
+      icon: 'ri-heart-pulse-line',
+      path: '/admin/welfare'
+    },
+    {
       id: 'feedback',
       label: 'User Feedback',
       icon: 'ri-chat-1-line',

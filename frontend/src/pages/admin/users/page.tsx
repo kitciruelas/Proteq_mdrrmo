@@ -438,7 +438,7 @@ const UserManagement: React.FC = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(user.status)}`}>
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full uppercase ${getStatusColor(user.status)}`}>
                       {getStatusText(user.status)}
                     </span>
                   </td>

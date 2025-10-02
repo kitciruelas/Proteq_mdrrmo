@@ -248,11 +248,22 @@ router.get('/analytics', async (req, res) => {
       ORDER BY month ASC
     `);
 
-    // Get peak hours analysis (incidents by hour of day)
+    // Get peak hours analysis (incidents by hour of day) with consecutive dates and times
     const [peakHoursData] = await pool.execute(`
       SELECT
         HOUR(created_at) as hour,
-        COUNT(*) as incident_count
+        COUNT(*) as incident_count,
+        MIN(created_at) as earliest_datetime,
+        MAX(created_at) as latest_datetime,
+        GROUP_CONCAT(
+          DISTINCT CONCAT(DATE(created_at), ' ', TIME_FORMAT(created_at, '%h:%i %p')) 
+          ORDER BY created_at DESC 
+          LIMIT 5
+        ) as sample_datetimes,
+        GROUP_CONCAT(
+          DISTINCT DATE(created_at) 
+          ORDER BY DATE(created_at) ASC
+        ) as consecutive_dates
       FROM incident_reports
       WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
       GROUP BY HOUR(created_at)
@@ -406,6 +417,7 @@ router.get('/monthly-trends', async (req, res) => {
     console.log('Fetching monthly incident trends...');
 
     const { period = 'months', limit = 12 } = req.query;
+    console.log(`Monthly trends request - Period: ${period}, Limit: ${limit}`);
     let dateFormat, groupBy, dateFilter;
 
     switch (period) {
@@ -415,8 +427,8 @@ router.get('/monthly-trends', async (req, res) => {
         dateFilter = `DATE_SUB(NOW(), INTERVAL ${Math.min(parseInt(limit), 30)} DAY)`;
         break;
       case 'weeks':
-        dateFormat = '%Y-%U';
-        groupBy = 'YEARWEEK(created_at)';
+        dateFormat = '%Y-W%U';
+        groupBy = 'YEARWEEK(created_at, 1)';
         dateFilter = `DATE_SUB(NOW(), INTERVAL ${Math.min(parseInt(limit), 52)} WEEK)`;
         break;
       case 'months':
@@ -427,7 +439,7 @@ router.get('/monthly-trends', async (req, res) => {
         break;
     }
 
-    const [trendsData] = await pool.execute(`
+    const query = `
       SELECT
         ${groupBy} as period,
         COUNT(*) as total_incidents,
@@ -436,16 +448,69 @@ router.get('/monthly-trends', async (req, res) => {
       FROM incident_reports
       WHERE created_at >= ${dateFilter}
       GROUP BY ${groupBy}
-      ORDER BY period ASC
-    `);
+      ORDER BY ${groupBy} ASC
+    `;
+    
+    console.log(`Executing query: ${query}`);
+    const [trendsData] = await pool.execute(query);
+    console.log(`Raw trends data for ${period}:`, trendsData);
 
-    // Format the response data
-    const formattedData = trendsData.map(row => ({
-      period: row.period,
-      total_incidents: row.total_incidents,
-      resolved_incidents: row.resolved_incidents,
-      high_priority_incidents: row.high_priority_incidents
-    }));
+    // Format the response data with better period labels
+    const formattedData = trendsData.map(row => {
+      let formattedPeriod = row.period;
+      
+      // Format period labels for better readability
+      if (period === 'days') {
+        // Convert YYYY-MM-DD to readable format
+        try {
+          // Handle both YYYY-MM-DD and YYYYMMDD formats
+          let dateStr = row.period;
+          if (typeof dateStr === 'number') {
+            // Convert YYYYMMDD to YYYY-MM-DD
+            dateStr = dateStr.toString();
+            if (dateStr.length === 8) {
+              dateStr = `${dateStr.substring(0, 4)}-${dateStr.substring(4, 6)}-${dateStr.substring(6, 8)}`;
+            }
+          }
+          
+          const date = new Date(dateStr);
+          if (isNaN(date.getTime())) {
+            // Fallback if date parsing fails
+            formattedPeriod = row.period;
+          } else {
+            formattedPeriod = date.toLocaleDateString('en-US', { 
+              month: 'short', 
+              day: 'numeric',
+              year: 'numeric'
+            });
+          }
+        } catch (error) {
+          // Fallback if date parsing fails
+          formattedPeriod = row.period;
+        }
+      } else if (period === 'weeks') {
+        // Convert YYYYWW to "Week X, YYYY" format
+        const year = Math.floor(row.period / 100);
+        const week = row.period % 100;
+        formattedPeriod = `Week ${week}, ${year}`;
+      } else if (period === 'months') {
+        // Convert YYYY-MM to readable format
+        const date = new Date(row.period + '-01');
+        formattedPeriod = date.toLocaleDateString('en-US', { 
+          month: 'long', 
+          year: 'numeric'
+        });
+      }
+      
+      return {
+        period: formattedPeriod,
+        total_incidents: row.total_incidents,
+        resolved_incidents: row.resolved_incidents,
+        high_priority_incidents: row.high_priority_incidents
+      };
+    });
+    
+    console.log(`Formatted data for ${period}:`, formattedData);
 
     res.json({
       success: true,

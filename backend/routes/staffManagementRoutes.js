@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/conn');
 const bcrypt = require('bcrypt');
+const { sendStaffAccountCreationEmail } = require('../services/emailService');
 
 // GET - Get all staff members
 router.get('/', async (req, res) => {
@@ -11,13 +12,14 @@ router.get('/', async (req, res) => {
       limit = 10, 
       search = '', 
       status = 'all',
+      availability = 'all',
       department = 'all',
       team_id = 'all'
     } = req.query;
     
-    console.log('Fetching staff with filters:', { page, limit, search, status, department, team_id });
+    console.log('Fetching staff with filters:', { page, limit, search, status, availability, department, team_id });
     
-    let whereClause = 'WHERE 1=1';
+    let whereClause = 'WHERE s.status = 1'; // Only active staff by default
     let queryParams = [];
     
     // Add search filter
@@ -26,10 +28,17 @@ router.get('/', async (req, res) => {
       queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    // Add availability filter
+    // Add status filter (active/inactive)
     if (status !== 'all') {
+      const statusValue = status === 'active' ? 1 : 0;
+      whereClause += ' AND s.status = ?';
+      queryParams.push(statusValue);
+    }
+
+    // Add availability filter
+    if (availability !== 'all') {
       whereClause += ' AND s.availability = ?';
-      queryParams.push(status);
+      queryParams.push(availability);
     }
 
     // Add department filter
@@ -67,7 +76,7 @@ router.get('/', async (req, res) => {
     const mappedStaff = staff.map(member => ({
       ...member,
       status: member.status === 1 ? 'active' : 'inactive',
-      availability: member.availability
+      availability: member.availability || 'available'
     }));
     
     res.json({
@@ -186,7 +195,22 @@ router.post('/', async (req, res) => {
       console.error('❌ Failed to log staff creation activity:', logError.message);
       // Don't fail the main operation if logging fails
     }
-    
+
+    // Send account creation email (optional - don't fail if email fails)
+    try {
+      const staffData = {
+        name,
+        email,
+        position,
+        department
+      };
+      await sendStaffAccountCreationEmail(staffData, password);
+      console.log('✅ Account creation email sent to:', email);
+    } catch (emailError) {
+      console.error('❌ Failed to send account creation email:', emailError.message);
+      // Don't fail the main operation if email fails
+    }
+
     res.status(201).json({
       success: true,
       message: 'Staff member created successfully',

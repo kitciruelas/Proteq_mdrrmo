@@ -4,7 +4,7 @@ import Navbar from '../../components/Navbar';
 import EvacuationCenterMap from '../../components/EvacuationCenterMap';
 import useGeolocation from '../../hooks/useGeolocation';
 import { getAuthState, type UserData } from '../../utils/auth';
-import { evacuationRoutesApi, evacuationCentersApi } from '../../utils/api';
+import { evacuationCentersApi } from '../../utils/api';
 
 
 interface EvacuationCenter {
@@ -20,19 +20,6 @@ interface EvacuationCenter {
   last_updated: string;
 }
 
-interface EvacuationRoute {
-  id: number;
-  center_id: number;
-  name: string;
-  description: string;
-  start_location: string;
-  end_location: string;
-  waypoints: Array<{ lat: number; lng: number }>;
-  distance: number;
-  estimated_time: number;
-  status: 'active' | 'inactive' | 'under_review';
-  priority: 'primary' | 'secondary' | 'emergency';
-}
 
 interface EvacuationResource {
   resource_id: number;
@@ -47,15 +34,13 @@ interface EvacuationResource {
 
 const EvacuationCenterPage: React.FC = () => {
   const [evacuationCenters, setEvacuationCenters] = useState<EvacuationCenter[]>([]);
-  const [evacuationRoutes, setEvacuationRoutes] = useState<EvacuationRoute[]>([]);
   const [evacuationResources, setEvacuationResources] = useState<{ [centerId: number]: EvacuationResource[] }>({});
   const [isLoading, setIsLoading] = useState(true);
-  const [routesLoading, setRoutesLoading] = useState(true);
   const [resourcesLoading, setResourcesLoading] = useState<{ [centerId: number]: boolean }>({});
   const [userData, setUserData] = useState<UserData | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
-  const [nearbyRadius, setNearbyRadius] = useState(5); // 5km default
+  const [maxNearbyDistance] = useState(10); // 10km max for "drive in nearby"
   const [selectedCenter, setSelectedCenter] = useState<EvacuationCenter | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'full' | 'closed'>('all');
@@ -68,23 +53,6 @@ const EvacuationCenterPage: React.FC = () => {
   // Get user location
   const { latitude, longitude, error: locationError, loading: locationLoading, getCurrentLocation } = useGeolocation();
 
-  // Load evacuation routes
-  const loadEvacuationRoutes = async () => {
-    try {
-      setRoutesLoading(true);
-      const data = await evacuationRoutesApi.getRoutes();
-      console.log('Routes data received:', data);
-      if (data.success) {
-        setEvacuationRoutes(data.routes || []);
-        console.log('Routes set:', data.routes);
-      }
-    } catch (error) {
-      console.error('Failed to load evacuation routes:', error);
-      setEvacuationRoutes([]);
-    } finally {
-      setRoutesLoading(false);
-    }
-  };
 
   // Load evacuation resources for a specific center
   const loadEvacuationResources = async (centerId: number) => {
@@ -120,14 +88,40 @@ const EvacuationCenterPage: React.FC = () => {
 
   useEffect(() => {
     const authState = getAuthState();
-    setIsAuthenticated(authState.isAuthenticated);
-    setUserData(authState.userData);
+    // Only allow user type to access this page
+    if (authState.isAuthenticated && authState.userType !== 'user') {
+      // Redirect admin/staff users to their respective dashboards
+      if (authState.userType === 'admin') {
+        window.location.href = '/admin';
+        return;
+      } else if (authState.userType === 'staff') {
+        window.location.href = '/staff';
+        return;
+      }
+    }
+    
+    const isUserAuth = authState.isAuthenticated && authState.userType === 'user';
+    setIsAuthenticated(isUserAuth);
+    setUserData(isUserAuth ? authState.userData : null);
 
     // Listen for authentication state changes
     const handleAuthStateChange = () => {
       const newAuthState = getAuthState();
-      setIsAuthenticated(newAuthState.isAuthenticated);
-      setUserData(newAuthState.userData);
+      // Only allow user type to access this page
+      if (newAuthState.isAuthenticated && newAuthState.userType !== 'user') {
+        // Redirect admin/staff users to their respective dashboards
+        if (newAuthState.userType === 'admin') {
+          window.location.href = '/admin';
+          return;
+        } else if (newAuthState.userType === 'staff') {
+          window.location.href = '/staff';
+          return;
+        }
+      }
+      
+      const isNewUserAuth = newAuthState.isAuthenticated && newAuthState.userType === 'user';
+      setIsAuthenticated(isNewUserAuth);
+      setUserData(isNewUserAuth ? newAuthState.userData : null);
     };
 
     window.addEventListener('storage', handleAuthStateChange);
@@ -155,8 +149,6 @@ const EvacuationCenterPage: React.FC = () => {
         setIsLoading(false);
       });
 
-    // Load evacuation routes
-    loadEvacuationRoutes();
 
     return () => {
       window.removeEventListener('storage', handleAuthStateChange);
@@ -183,25 +175,68 @@ const EvacuationCenterPage: React.FC = () => {
     return R * c;
   };
 
-  // Get nearby centers
+  // Get nearby centers (drive in nearby - within reasonable driving distance)
   const nearbyCenters = latitude && longitude
-    ? evacuationCenters.filter(center =>
-        calculateDistance(latitude, longitude, center.latitude, center.longitude) <= nearbyRadius
-      ).sort((a, b) =>
+    ? evacuationCenters.filter(center => {
+        const distance = calculateDistance(latitude, longitude, center.latitude, center.longitude);
+        return distance <= maxNearbyDistance;
+      }).sort((a, b) =>
         calculateDistance(latitude, longitude, a.latitude, a.longitude) -
         calculateDistance(latitude, longitude, b.latitude, b.longitude)
       )
     : [];
 
+  // Get suggested evacuation centers (smart recommendations)
+  const getSuggestedCenters = () => {
+    if (!latitude || !longitude) return [];
+    
+    const centersWithDistance = evacuationCenters.map(center => ({
+      ...center,
+      distance: calculateDistance(latitude, longitude, center.latitude, center.longitude)
+    }));
+
+    // Calculate recommendation scores for all centers and sort by score
+    return centersWithDistance
+      .map(center => ({
+        ...center,
+        recommendationScore: calculateRecommendationScore(center)
+      }))
+      .sort((a, b) => b.recommendationScore - a.recommendationScore)
+      .slice(0, 3); // Top 3 suggestions
+  };
+
+  // Calculate recommendation score based on multiple factors
+  const calculateRecommendationScore = (center: EvacuationCenter & { distance: number }) => {
+    let score = 0;
+    
+    // Distance factor (closer is better) - 30% weight
+    // Use a more gradual distance scoring that doesn't cut off at 10km
+    const distanceScore = Math.max(0, 1 - (center.distance / 50)); // Gradual decay up to 50km
+    score += distanceScore * 30;
+    
+    // Status factor - 35% weight (most important)
+    const statusScore = center.status === 'open' ? 1 : center.status === 'full' ? 0.2 : 0;
+    score += statusScore * 35;
+    
+    // Capacity factor - 25% weight (more available space is better)
+    const capacityRatio = (center.capacity - center.current_occupancy) / center.capacity;
+    score += capacityRatio * 25;
+    
+    // Availability factor - 10% weight (recently updated is better)
+    const lastUpdated = new Date(center.last_updated);
+    const hoursSinceUpdate = (Date.now() - lastUpdated.getTime()) / (1000 * 60 * 60);
+    const freshnessScore = Math.max(0, 1 - (hoursSinceUpdate / 24)); // Decay over 24 hours
+    score += freshnessScore * 10;
+    
+    return Math.round(score);
+  };
+
+  const suggestedCenters = getSuggestedCenters();
+
   const handleCenterClick = (center: EvacuationCenter) => {
     setSelectedCenter(center);
   };
 
-  const handleRouteClick = (route: EvacuationRoute) => {
-    console.log('Route clicked:', route);
-    // You can add additional logic here, like showing route details
-    alert(`Route: ${route.name}\nDistance: ${route.distance} km\nTime: ${route.estimated_time} min`);
-  };
 
   // Get resources for a specific center
   const getResourcesForCenter = (centerId: number): EvacuationResource[] => {
@@ -397,50 +432,210 @@ const EvacuationCenterPage: React.FC = () => {
             </div>
 
             {/* Enhanced Typography */}
-            <h1 className="text-5xl md:text-6xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-indigo-900 bg-clip-text text-transparent mb-6 leading-tight">
+            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold bg-gradient-to-r from-gray-900 via-blue-900 to-indigo-900 bg-clip-text text-transparent mb-6 leading-tight">
               Evacuation Centers
             </h1>
 
-            <p className="text-xl md:text-2xl text-gray-600 mb-8 leading-relaxed">
+            <p className="text-lg sm:text-xl md:text-2xl text-gray-600 mb-8 leading-relaxed">
               Rosario, Batangas
-              <span className="block text-lg text-gray-500 mt-2">Emergency Evacuation Facilities</span>
+              <span className="block text-base sm:text-lg text-gray-500 mt-2">Emergency Evacuation Facilities</span>
             </p>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 max-w-3xl mx-auto">
-              <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-4 shadow-lg">
-                <div className="text-2xl font-bold text-blue-600">{evacuationCenters.length}</div>
-                <div className="text-sm text-gray-600">Total Centers</div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-8 max-w-4xl mx-auto">
+              <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-3 md:p-4 shadow-lg">
+                <div className="text-xl md:text-2xl font-bold text-blue-600">{evacuationCenters.length}</div>
+                <div className="text-xs md:text-sm text-gray-600">Total Centers</div>
               </div>
-              <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-4 shadow-lg">
-                <div className="text-2xl font-bold text-green-600">
+              <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-3 md:p-4 shadow-lg">
+                <div className="text-xl md:text-2xl font-bold text-green-600">
                   {evacuationCenters.filter(c => c.status === 'open').length}
                 </div>
-                <div className="text-sm text-gray-600">Available</div>
+                <div className="text-xs md:text-sm text-gray-600">Available</div>
               </div>
-              <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-4 shadow-lg">
-                <div className="text-2xl font-bold text-blue-600">{nearbyCenters.length}</div>
-                <div className="text-sm text-gray-600">Nearby</div>
+              <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-3 md:p-4 shadow-lg">
+                <div className="text-xl md:text-2xl font-bold text-blue-600">{nearbyCenters.length}</div>
+                <div className="text-xs md:text-sm text-gray-600">Drive-in Nearby</div>
+              </div>
+              <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-3 md:p-4 shadow-lg">
+                <div className="text-xl md:text-2xl font-bold text-yellow-600">{suggestedCenters.length}</div>
+                <div className="text-xs md:text-sm text-gray-600">Recommended</div>
               </div>
             </div>
 
             {/* Enhanced Info Banner */}
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-2xl p-6 max-w-3xl mx-auto shadow-lg backdrop-blur-sm">
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-2xl p-4 md:p-6 max-w-3xl mx-auto shadow-lg backdrop-blur-sm">
               <div className="flex items-center justify-center text-blue-800">
-                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                  <i className="ri-information-line text-blue-600"></i>
+                <div className="w-6 h-6 md:w-8 md:h-8 bg-blue-100 rounded-full flex items-center justify-center mr-2 md:mr-3">
+                  <i className="ri-information-line text-blue-600 text-sm md:text-base"></i>
                 </div>
-                <p className="font-semibold text-lg">
+                <p className="font-semibold text-sm md:text-lg">
                   Real-time information for all evacuation centers
                 </p>
               </div>
-              <p className="text-blue-600 text-sm mt-2 opacity-80">
+              <p className="text-blue-600 text-xs md:text-sm mt-2 opacity-80">
                 Updated every 5 minutes • Last update: {new Date().toLocaleTimeString()}
               </p>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Suggested Evacuation Centers Section */}
+      {suggestedCenters.length > 0 && (
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 py-12">
+          <div className="container mx-auto px-4">
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-white/20 rounded-2xl mb-4">
+                <i className="ri-lightbulb-line text-3xl text-white"></i>
+              </div>
+              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+                Recommended for You
+              </h2>
+              <p className="text-blue-100 text-lg max-w-2xl mx-auto">
+                Based on availability, capacity, and distance, these are the best evacuation centers for you
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 max-w-6xl mx-auto">
+              {suggestedCenters.map((center, index) => (
+                <div
+                  key={center.center_id}
+                  className="group relative bg-white/95 backdrop-blur-sm rounded-2xl p-4 md:p-6 shadow-2xl hover:shadow-3xl transition-all duration-300 hover:-translate-y-2 border border-white/20"
+                  style={{ animationDelay: `${index * 200}ms` }}
+                >
+                  {/* Recommendation Badge */}
+                  <div className="absolute -top-2 -right-2 md:-top-3 md:-right-3 bg-gradient-to-r from-yellow-400 to-orange-500 text-white px-2 py-1 md:px-3 rounded-full text-xs md:text-sm font-bold shadow-lg">
+                    #{index + 1} Choice
+                  </div>
+
+                  {/* Score Indicator */}
+                  <div className="absolute top-3 left-3 md:top-4 md:left-4">
+                    <div className="flex items-center space-x-1 md:space-x-2">
+                      <div className="w-6 h-6 md:w-8 md:h-8 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center">
+                        <span className="text-white font-bold text-xs md:text-sm">{center.recommendationScore}</span>
+                      </div>
+                      <span className="text-xs text-gray-500 font-medium hidden md:inline">Score</span>
+                    </div>
+                  </div>
+
+                  {/* Center Header */}
+                  <div className="mt-8 md:mt-6 mb-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 space-y-2 sm:space-y-0">
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center shadow-lg ${
+                          center.status === 'open' ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
+                          center.status === 'full' ? 'bg-gradient-to-r from-red-500 to-rose-500' :
+                          'bg-gradient-to-r from-gray-500 to-slate-500'
+                        }`}>
+                          <i className="ri-building-2-line text-lg md:text-xl text-white"></i>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-base md:text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors truncate">
+                            {center.name}
+                          </h3>
+                          <p className="text-xs md:text-sm text-gray-600">Emergency Facility</p>
+                        </div>
+                      </div>
+                      <span className={`px-2 py-1 md:px-3 rounded-full text-xs font-semibold self-start sm:self-auto ${
+                        center.status === 'open' ? 'bg-green-100 text-green-800' :
+                        center.status === 'full' ? 'bg-red-100 text-red-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {center.status.charAt(0).toUpperCase() + center.status.slice(1)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Key Metrics */}
+                  <div className="space-y-3 mb-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <i className="ri-car-line text-blue-500"></i>
+                        <span className="text-sm font-medium text-gray-700">Distance</span>
+                      </div>
+                      <span className="text-sm font-bold text-blue-600">
+                        {center.distance.toFixed(1)} km
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <i className="ri-group-line text-green-500"></i>
+                        <span className="text-sm font-medium text-gray-700">Available Space</span>
+                      </div>
+                      <span className="text-sm font-bold text-green-600">
+                        {center.capacity - center.current_occupancy} people
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <i className="ri-phone-line text-purple-500"></i>
+                        <span className="text-sm font-medium text-gray-700">Contact</span>
+                      </div>
+                      <span className="text-sm font-bold text-purple-600">
+                        {center.contact_person}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Why Recommended */}
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-6">
+                    <h4 className="text-sm font-bold text-gray-900 mb-2 flex items-center">
+                      <i className="ri-star-line text-yellow-500 mr-2"></i>
+                      Why Recommended
+                    </h4>
+                    <div className="space-y-1 text-xs text-gray-600">
+                      {center.distance < 5 && (
+                        <p>• Close to your location ({center.distance.toFixed(1)}km)</p>
+                      )}
+                      {center.distance >= 5 && center.distance < 15 && (
+                        <p>• Reasonable distance ({center.distance.toFixed(1)}km)</p>
+                      )}
+                      {center.status === 'open' && (
+                        <p>• Currently accepting evacuees</p>
+                      )}
+                      {(center.capacity - center.current_occupancy) > center.capacity * 0.5 && (
+                        <p>• Plenty of available space</p>
+                      )}
+                      {center.status === 'open' && (center.capacity - center.current_occupancy) > center.capacity * 0.3 && (
+                        <p>• Good availability and capacity</p>
+                      )}
+                      {center.recommendationScore > 70 && (
+                        <p>• High overall recommendation score</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <button
+                      onClick={() => window.open(`https://maps.google.com/?q=${encodeURIComponent(center.name + ' Rosario, Batangas')}`, '_blank')}
+                      className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-xl hover:bg-blue-700 transition-colors font-semibold text-sm flex items-center justify-center space-x-2"
+                    >
+                      <i className="ri-direction-line text-sm"></i>
+                      <span>Get Directions</span>
+                    </button>
+                    <button
+                      onClick={() => window.open(`tel:${center.contact_number}`, '_self')}
+                      className="flex-1 border-2 border-blue-600 text-blue-600 py-3 px-4 rounded-xl hover:bg-blue-600 hover:text-white transition-colors font-semibold text-sm flex items-center justify-center space-x-2"
+                    >
+                      <i className="ri-phone-line text-sm"></i>
+                      <span>Call Now</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* View All Button */}
+            <div className="text-center mt-8">
+            
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="container mx-auto px-4 pb-8">
 
@@ -487,8 +682,8 @@ const EvacuationCenterPage: React.FC = () => {
 
             {/* Search and Filter Controls */}
             <div className="max-w-4xl mx-auto mb-8">
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-6">
-                <div className="grid md:grid-cols-3 gap-4">
+              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-4 md:p-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Search Input */}
                   <div className="md:col-span-2">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -599,7 +794,7 @@ const EvacuationCenterPage: React.FC = () => {
                       <div className="flex-1">
                         <p className="text-green-700 font-medium">Location Found</p>
                         <p className="text-green-600 text-sm">
-                          {nearbyCenters.length} centers within {nearbyRadius}km
+                          {nearbyCenters.length} drive-in centers within {maxNearbyDistance}km
                         </p>
                       </div>
                       <div className="text-right">
@@ -692,30 +887,22 @@ const EvacuationCenterPage: React.FC = () => {
                       <div className="flex items-center space-x-4">
                         <div className="flex items-center space-x-3">
                           <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                            <i className="ri-radar-line text-blue-600"></i>
+                            <i className="ri-car-line text-blue-600"></i>
                           </div>
                           <label className="text-sm font-semibold text-gray-700">
-                            Search Radius:
+                            Drive-in Nearby Centers:
                           </label>
                         </div>
-                        <select
-                          value={nearbyRadius}
-                          onChange={(e) => setNearbyRadius(Number(e.target.value))}
-                          className="bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm font-medium text-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                        >
-                          <option value={1}>1 km radius</option>
-                          <option value={2}>2 km radius</option>
-                          <option value={5}>5 km radius</option>
-                          <option value={10}>10 km radius</option>
-                          <option value={20}>20 km radius</option>
-                        </select>
+                        <div className="text-sm text-gray-600">
+                          Within {maxNearbyDistance}km driving distance
+                        </div>
                         {userLocation && (
                           <button
                             onClick={getCurrentLocation}
                             className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors flex items-center space-x-2"
                           >
                             <i className="ri-refresh-line"></i>
-                            <span>Refresh</span>
+                            <span>Refresh Location</span>
                           </button>
                         )}
                       </div>
@@ -725,13 +912,8 @@ const EvacuationCenterPage: React.FC = () => {
               {/* Map Component */}
               <EvacuationCenterMap
                 evacuationCenters={filteredCenters}
-                evacuationRoutes={evacuationRoutes}
                 userLocation={userLocation}
-                nearbyRadius={nearbyRadius}
                 onCenterClick={handleCenterClick}
-                onRouteClick={handleRouteClick}
-                showNearbyRadius={true}
-                showRoutes={true}
                 height="32rem"
               />
 
@@ -744,8 +926,8 @@ const EvacuationCenterPage: React.FC = () => {
                         <i className="ri-map-pin-line text-white text-base"></i>
                       </div>
                       <div>
-                        <h3 className="text-xl font-bold text-gray-900">Nearby Centers</h3>
-                        <p className="text-gray-600 text-sm">Within {nearbyRadius}km of your location</p>
+                        <h3 className="text-xl font-bold text-gray-900">Drive-in Nearby Centers</h3>
+                        <p className="text-gray-600 text-sm">Within {maxNearbyDistance}km driving distance</p>
                       </div>
                     </div>
                     <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">
@@ -943,18 +1125,18 @@ const EvacuationCenterPage: React.FC = () => {
           ) : (
             <div>
               {/* Enhanced List View */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 px-4 sm:px-6 lg:px-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 px-4 sm:px-6 lg:px-8">
               {displayedCenters.map((center, index) => {
                 const distance = userLocation
                   ? calculateDistance(userLocation.latitude, userLocation.longitude, center.latitude, center.longitude)
                   : null;
-                const isNearby = distance !== null && distance <= nearbyRadius;
+                const isNearby = distance !== null && distance <= maxNearbyDistance;
                 const occupancyPercentage = (center.current_occupancy / center.capacity) * 100;
 
                 return (
                   <div
                     key={center.center_id}
-                    className={`group relative bg-white/90 backdrop-blur-sm border rounded-xl shadow-lg px-1 py-3 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 ${
+                    className={`group relative bg-white/90 backdrop-blur-sm border rounded-xl shadow-lg px-3 py-4 md:px-1 md:py-3 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 ${
                       isNearby
                         ? 'border-blue-300 ring-1 ring-blue-100 bg-gradient-to-br from-blue-50/50 to-white'
                         : 'border-white/20 hover:border-blue-200'
@@ -964,10 +1146,10 @@ const EvacuationCenterPage: React.FC = () => {
                       animation: 'fadeInUp 0.4s ease-out forwards'
                     }}
                   >
-                    {/* Nearby Badge */}
+                    {/* Drive-in Nearby Badge */}
                     {isNearby && (
                       <div className="absolute -top-1 -right-1 bg-blue-600 text-white px-2 py-0.5 rounded-full text-xs font-medium shadow-md">
-                        <i className="ri-map-pin-line mr-0.5 text-xs"></i>
+                        <i className="ri-car-line mr-0.5 text-xs"></i>
                         {distance!.toFixed(1)}km
                       </div>
                     )}
@@ -1141,17 +1323,17 @@ const EvacuationCenterPage: React.FC = () => {
 
 
                     {/* Action Buttons */}
-                    <div className="flex gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <button
                         onClick={() => window.open(`https://maps.google.com/?q=${encodeURIComponent(center.name + ' Rosario, Batangas')}`, '_blank')}
-                        className="flex-1 bg-blue-600 text-white py-2 px-3 rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm flex items-center justify-center space-x-1"
+                        className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm flex items-center justify-center space-x-2"
                       >
                         <i className="ri-direction-line text-sm"></i>
                         <span>Directions</span>
                       </button>
                       <button
                         onClick={() => window.open(`tel:${center.contact_number}`, '_self')}
-                        className="flex-1 border border-blue-600 text-blue-600 py-2 px-3 rounded-lg hover:bg-blue-600 hover:text-white transition-colors font-medium text-sm flex items-center justify-center space-x-1"
+                        className="flex-1 border border-blue-600 text-blue-600 py-3 px-4 rounded-lg hover:bg-blue-600 hover:text-white transition-colors font-medium text-sm flex items-center justify-center space-x-2"
                       >
                         <i className="ri-phone-line text-sm"></i>
                         <span>Call</span>
@@ -1589,5 +1771,4 @@ const EvacuationCenterPage: React.FC = () => {
 };
 
 export default EvacuationCenterPage;
-
 

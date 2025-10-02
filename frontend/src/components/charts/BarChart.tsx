@@ -32,14 +32,37 @@ interface BarChartProps {
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
+    const data = payload[0]?.payload;
     return (
       <div className="bg-white p-3 rounded-lg shadow-lg border border-gray-200">
-        <p className="font-medium text-gray-900 mb-1">{label}</p>
+        <p className="font-medium text-gray-900 mb-1">
+          {data?.timeLabel || label}
+        </p>
         {payload.map((entry: any, index: number) => (
           <p key={index} className="text-sm" style={{ color: entry.color }}>
             {`${entry.dataKey}: ${entry.value.toLocaleString()}`}
           </p>
         ))}
+        {data?.formattedTime && (
+          <p className="text-xs text-gray-500 mt-1">
+            Time: {data.formattedTime}
+          </p>
+        )}
+        {data?.sampleDateTime && (
+          <p className="text-xs text-blue-600 mt-1">
+            Latest: {data.sampleDateTime}
+          </p>
+        )}
+        {data?.dateRange && (
+          <p className="text-xs text-green-600 mt-1">
+            Consecutive Dates: {data.dateRange}
+          </p>
+        )}
+        {data?.timeRange && (
+          <p className="text-xs text-purple-600 mt-1">
+            Time Range: {data.timeRange}
+          </p>
+        )}
       </div>
     )
   }

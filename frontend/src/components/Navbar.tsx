@@ -5,7 +5,9 @@ import { useState, useEffect } from "react"
 import { useNavigate } from "react-router-dom"
 import { getAuthState, clearAuthData, type UserData } from "../utils/auth"
 import { userAuthApi } from "../utils/api"
+import { notificationsApi } from "../types/notifications"
 import LogoutModal from "./LogoutModal"
+import AlertModal from "./AlertModal"
 
 interface NavbarProps {
   isAuthenticated?: boolean
@@ -16,21 +18,37 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
   const navigate = useNavigate()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false)
-  const [isNavigating, setIsNavigating] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(propIsAuthenticated || false)
   const [userData, setUserData] = useState<UserData | null>(propUserData || null)
+  const [userType, setUserType] = useState<'user' | 'admin' | 'staff' | null>(null)
   const [showLogoutModal, setShowLogoutModal] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [showAlertModal, setShowAlertModal] = useState(false)
+  const [selectedAlert, setSelectedAlert] = useState<any>(null)
+  
+  // Notification states (like AdminLayout)
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false)
+  const [readNotifications, setReadNotifications] = useState<Set<number>>(() => {
+    const saved = localStorage.getItem('readNotifications');
+    return saved ? new Set(JSON.parse(saved)) : new Set();
+  });
 
   useEffect(() => {
     const authState = getAuthState()
-    setIsAuthenticated(authState.isAuthenticated)
-    setUserData(authState.userData)
+    // Only allow user type to access these pages
+    const isUserAuth = authState.isAuthenticated && authState.userType === 'user'
+    setIsAuthenticated(isUserAuth)
+    setUserData(isUserAuth ? authState.userData : null)
+    setUserType(isUserAuth ? authState.userType : null)
 
     const handleAuthStateChange = () => {
       const newAuthState = getAuthState()
-      setIsAuthenticated(newAuthState.isAuthenticated)
-      setUserData(newAuthState.userData)
+      // Only allow user type to access these pages
+      const isNewUserAuth = newAuthState.isAuthenticated && newAuthState.userType === 'user'
+      setIsAuthenticated(isNewUserAuth)
+      setUserData(isNewUserAuth ? newAuthState.userData : null)
+      setUserType(isNewUserAuth ? newAuthState.userType : null)
     }
 
     window.addEventListener("storage", handleAuthStateChange)
@@ -41,6 +59,30 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
       window.removeEventListener("authStateChanged", handleAuthStateChange)
     }
   }, [])
+
+  // Save read notifications to localStorage (like AdminLayout)
+  useEffect(() => {
+    localStorage.setItem('readNotifications', JSON.stringify([...readNotifications]));
+  }, [readNotifications]);
+
+  // Fetch notifications on mount (like AdminLayout)
+  useEffect(() => {
+    console.log('Auth state changed:', { isAuthenticated, userType });
+    if (isAuthenticated) {
+      fetchNotifications();
+    }
+  }, [isAuthenticated]);
+
+  // Set up polling for notifications (like AdminLayout)
+  useEffect(() => {
+    if (!isAuthenticated) return
+
+    const interval = setInterval(() => {
+      fetchNotifications();
+    }, 30000) // Poll every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -59,6 +101,9 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
       if (isProfileDropdownOpen && !target.closest(".profile-dropdown")) {
         setIsProfileDropdownOpen(false)
       }
+      if (showNotifDropdown && !target.closest(".notification-dropdown")) {
+        setShowNotifDropdown(false)
+      }
     }
 
     if (isMobileMenuOpen) {
@@ -68,7 +113,7 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
       document.body.style.overflow = "unset"
     }
 
-    if (isProfileDropdownOpen) {
+    if (isProfileDropdownOpen || showNotifDropdown) {
       document.addEventListener("keydown", handleKeyDown)
       document.addEventListener("click", handleClickOutside)
     }
@@ -78,11 +123,69 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
       document.removeEventListener("click", handleClickOutside)
       document.body.style.overflow = "unset"
     }
-  }, [isMobileMenuOpen, isProfileDropdownOpen])
+  }, [isMobileMenuOpen, isProfileDropdownOpen, showNotifDropdown])
+
+  // Fetch notifications (like AdminLayout)
+  const fetchNotifications = async () => {
+    if (!isAuthenticated) {
+      console.log('Not authenticated, skipping notification fetch');
+      return;
+    }
+    
+    console.log('Fetching notifications for authenticated user');
+    try {
+      const response = await notificationsApi.getNotifications(10, 0);
+      if (response.success && Array.isArray(response.notifications)) {
+        setNotifications(response.notifications);
+
+        // Clean up read notifications that are no longer in the list
+        const currentIds = new Set(response.notifications.map(notif => notif.id));
+        setReadNotifications(prev => {
+          const cleaned = new Set([...prev].filter(id => currentIds.has(id)));
+          return cleaned;
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch notifications:', error);
+    }
+  };
+
+  // Toggle notification dropdown (like AdminLayout)
+  const toggleNotifDropdown = () => {
+    if (!showNotifDropdown) {
+      fetchNotifications();
+    }
+    setShowNotifDropdown(!showNotifDropdown);
+  };
+
+  // Mark notification as read (like AdminLayout)
+  const markAsRead = (notificationId: number) => {
+    setReadNotifications(prev => new Set([...prev, notificationId]));
+  };
+
+  // Mark all notifications as read (like AdminLayout)
+  const markAllAsRead = () => {
+    const allIds = notifications.map(notif => notif.id);
+    setReadNotifications(new Set(allIds));
+  };
+
+  // Get unread notifications count (like AdminLayout)
+  const unreadCount = notifications.filter(notif => !readNotifications.has(notif.id)).length;
+
+
+  const toggleNotificationDropdown = () => {
+    toggleNotifDropdown()
+    setIsProfileDropdownOpen(false) // Close profile dropdown when opening notification dropdown
+  }
+
+  const closeNotificationDropdown = () => {
+    setShowNotifDropdown(false)
+  }
 
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen)
     setIsProfileDropdownOpen(false) // Close profile dropdown when opening mobile menu
+    setShowNotifDropdown(false) // Close notification dropdown when opening mobile menu
   }
 
   const closeMobileMenu = () => {
@@ -98,7 +201,7 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
     setIsProfileDropdownOpen(false)
   }
 
-  const handleNavigation = (path: string, label: string) => {
+  const handleNavigation = (path: string) => {
     // Close all menus first
     closeProfileDropdown()
     closeMobileMenu()
@@ -126,7 +229,7 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
   }
 
   const handleProfileClick = () => {
-    handleNavigation("/profile", "Profile")
+    handleNavigation("/profile")
   }
 
   const handleLogoutClick = () => {
@@ -178,45 +281,155 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
             {/* Desktop Navigation */}
             <div className="hidden lg:flex items-center space-x-4 xl:space-x-6">
               <button
-                onClick={() => handleNavigation("/", "Home")}
+                onClick={() => handleNavigation("/")}
                 className="text-gray-700 hover:text-blue-600 transition-colors font-medium text-sm xl:text-base whitespace-nowrap"
               >
                 Home
               </button>
               <button
-                onClick={() => handleNavigation("/evacuation-center", "Evacuation Centers")}
+                onClick={() => handleNavigation("/evacuation-center")}
                 className="text-gray-700 hover:text-blue-600 transition-colors font-medium text-sm xl:text-base whitespace-nowrap"
               >
                 Evacuation Centers
               </button>
               <button
-                onClick={() => handleNavigation("/safety-protocols", "Safety Protocols")}
-                className="text-gray-700 hover:text-blue-600 transition-colors font-medium text-sm xl:text-base whitespace-nowrap"
-              >
-                Safety Protocols
-              </button>
-              <button
-                onClick={() => handleNavigation("/incident-report", "Incident Report")}
+                onClick={() => handleNavigation("/incident-report")}
                 className="text-gray-700 hover:text-blue-600 transition-colors font-medium text-sm xl:text-base whitespace-nowrap"
               >
                 Report Incident
               </button>
-              {/* Admin Dashboard Link */}
-              {userData?.userType === "admin" && (
-                <button
-                  onClick={() => handleNavigation("/admin/dashboard", "Admin Dashboard")}
-                  className="text-white bg-red-600 hover:bg-red-700 px-2 xl:px-3 py-2 rounded-lg transition-colors font-medium flex items-center text-sm xl:text-base whitespace-nowrap"
-                >
-                  <i className="ri-admin-line mr-1 xl:mr-2 text-sm xl:text-base"></i>
-                  <span className="hidden xl:inline">Admin Panel</span>
-                  <span className="xl:hidden">Admin</span>
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  if (window.location.pathname === "/") {
+                    // If already on home page, scroll to FAQ section
+                    const faqSection = document.getElementById("faq-section")
+                    if (faqSection) {
+                      faqSection.scrollIntoView({ behavior: "smooth" })
+                    }
+                  } else {
+                    // If on other page, navigate to home and then scroll to FAQ
+                    window.location.href = "/#faq-section"
+                  }
+                }}
+                className="text-gray-700 hover:text-blue-600 transition-colors font-medium text-sm xl:text-base whitespace-nowrap"
+              >
+                FAQs
+              </button>
+          
             </div>
 
-            {/* Desktop Auth */}
+            {/* Desktop Auth - Profile Section with Notifications */}
             <div className="hidden md:flex items-center space-x-2 lg:space-x-4 min-w-0">
               {isAuthenticated ? (
+                <>
+                  {/* Notification Icon */}
+                  <div className="relative notification-dropdown">
+                    <button
+                      onClick={toggleNotificationDropdown}
+                      className="relative p-2 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 focus:outline-none"
+                    >
+                      <i className="ri-notification-line text-xl"></i>
+                      {unreadCount > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-medium">
+                          {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                      )}
+                    </button>
+                    
+                    {/* Notification Dropdown */}
+                    {showNotifDropdown && (
+                      <div 
+                        className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-gray-200 rounded-lg shadow-xl z-50 cursor-pointer"
+                        onClick={() => {
+                          closeNotificationDropdown()
+                          handleNavigation("/notifications")
+                        }}
+                      >
+                        {/* Header */}
+                        <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200 rounded-t-lg">
+                          <div className="flex items-center justify-between">
+                            <h3 className="font-semibold text-gray-900">Notifications</h3>
+                            {unreadCount > 0 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation(); // Prevent dropdown click
+                                  markAllAsRead();
+                                }}
+                                className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                              >
+                                Mark all as read
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Notifications List */}
+                        <div className="max-h-96 overflow-y-auto">
+                          {notifications.length === 0 ? (
+                            <div className="text-center py-8">
+                              <i className="ri-notification-off-line text-4xl text-gray-300"></i>
+                              <p className="text-gray-500 mt-2">No notifications</p>
+                            </div>
+                          ) : (
+                            <div className="divide-y divide-gray-100">
+                            {notifications.map((notification) => {
+                              const isRead = readNotifications.has(notification.id) || notification.is_read;
+                              return (
+                                <div
+                                  key={notification.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation(); // Prevent dropdown click
+                                    if (!isRead) {
+                                      markAsRead(notification.id);
+                                    }
+                                    
+                                    // Navigate based on notification type
+                                    if (notification.type === 'safety_protocol') {
+                                      closeNotificationDropdown();
+                                      handleNavigation("/safety-protocols");
+                                    } else if (notification.type === 'alert') {
+                                      closeNotificationDropdown();
+                                      setSelectedAlert(notification);
+                                      setShowAlertModal(true);
+                                    } else if (notification.type === 'welfare') {
+                                      closeNotificationDropdown();
+                                      handleNavigation("/welfare-check");
+                                    }
+                                  }}
+                                  className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
+                                    !isRead ? 'bg-blue-50' : ''
+                                  }`}
+                                >
+                                    <div className="flex items-start space-x-3">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center space-x-2">
+                                          <p className="text-sm font-medium text-gray-900 truncate">
+                                            {notification.title}
+                                          </p>
+                                          {!isRead && (
+                                            <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></div>
+                                          )}
+                                        </div>
+                                        <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                                          {notification.message}
+                                        </p>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                          {new Date(notification.created_at).toLocaleString()}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Profile Dropdown */}
                 <div className="relative profile-dropdown">
                   <button
                     onClick={toggleProfileDropdown}
@@ -268,10 +481,7 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                             >
                               {userData?.email || "No email provided"}
                             </p>
-                            <div className="flex items-center mt-1">
-                              <div className="w-2 h-2 bg-green-400 rounded-full mr-1 flex-shrink-0"></div>
-                              <span className="text-xs text-gray-500">Online</span>
-                            </div>
+                          
                           </div>
                         </div>
                       </div>
@@ -292,7 +502,7 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                         </button>
 
                         <button
-                          onClick={() => handleNavigation("/history-report", "History Report")}
+                          onClick={() => handleNavigation("/history-report")}
                           className="flex items-center w-full text-left px-4 py-3 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-all duration-200 group"
                         >
                           <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-100 transition-colors">
@@ -305,7 +515,7 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                         </button>
 
                         <button
-                          onClick={() => handleNavigation("/feedback", "Submit Feedback")}
+                          onClick={() => handleNavigation("/feedback")}
                           className="flex items-center w-full text-left px-4 py-3 text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-all duration-200 group"
                         >
                           <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-100 transition-colors">
@@ -335,16 +545,17 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                     </div>
                   )}
                 </div>
+                </>
               ) : (
                 <div className="flex items-center space-x-2 lg:space-x-4">
                   <button
-                    onClick={() => handleNavigation("/auth/login", "Desktop Sign In")}
+                    onClick={() => handleNavigation("/auth/login")}
                     className="text-gray-700 hover:text-blue-600 transition-colors font-medium text-sm lg:text-base whitespace-nowrap"
                   >
                     Sign In
                   </button>
                   <button
-                    onClick={() => handleNavigation("/auth/signup", "Desktop Get Started")}
+                    onClick={() => handleNavigation("/auth/signup")}
                     className="bg-blue-600 text-white px-3 lg:px-6 py-2 rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium text-sm lg:text-base whitespace-nowrap"
                   >
                     <span className="hidden lg:inline">Get Started</span>
@@ -354,14 +565,124 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
               )}
             </div>
 
-            {/* Mobile Menu Button */}
+            {/* Mobile Menu Button and Notifications */}
+            <div className="md:hidden flex items-center space-x-2">
+              {isAuthenticated && (
+                <div className="relative notification-dropdown">
+                  <button
+                    onClick={toggleNotificationDropdown}
+                    className="relative p-2 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 focus:outline-none"
+                  >
+                    <i className="ri-notification-line text-xl"></i>
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center font-medium">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </button>
+                  
+                  {/* Mobile Notification Dropdown */}
+                  {showNotifDropdown && (
+                    <div 
+                      className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-gray-200 rounded-lg shadow-xl z-50 cursor-pointer"
+                      onClick={() => {
+                        closeNotificationDropdown()
+                        handleNavigation("/notifications")
+                      }}
+                    >
+                      {/* Header */}
+                      <div className="px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200 rounded-t-lg">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-semibold text-gray-900">Notifications</h3>
+                          {unreadCount > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation(); // Prevent dropdown click
+                                markAllAsRead();
+                              }}
+                              className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                            >
+                              Mark all as read
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Notifications List */}
+                      <div className="max-h-96 overflow-y-auto">
+                        {notifications.length === 0 ? (
+                          <div className="text-center py-8">
+                            <i className="ri-notification-off-line text-4xl text-gray-300"></i>
+                            <p className="text-gray-500 mt-2">No notifications</p>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-gray-100">
+                            {notifications.map((notification) => {
+                              const isRead = readNotifications.has(notification.id) || notification.is_read;
+                              return (
+                                <div
+                                  key={notification.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation(); // Prevent dropdown click
+                                    if (!isRead) {
+                                      markAsRead(notification.id);
+                                    }
+                                    
+                                    // Navigate based on notification type
+                                    if (notification.type === 'safety_protocol') {
+                                      closeNotificationDropdown();
+                                      handleNavigation("/safety-protocols");
+                                    } else if (notification.type === 'alert') {
+                                      closeNotificationDropdown();
+                                      setSelectedAlert(notification);
+                                      setShowAlertModal(true);
+                                    } else if (notification.type === 'welfare') {
+                                      closeNotificationDropdown();
+                                      handleNavigation("/welfare-check");
+                                    }
+                                  }}
+                                  className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
+                                    !isRead ? 'bg-blue-50' : ''
+                                  }`}
+                                >
+                                  <div className="flex items-start space-x-3">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center space-x-2">
+                                        <p className="text-sm font-medium text-gray-900 truncate">
+                                          {notification.title}
+                                        </p>
+                                        {!isRead && (
+                                          <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></div>
+                                        )}
+                                      </div>
+                                      <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                                        {notification.message}
+                                      </p>
+                                      <p className="text-xs text-gray-500 mt-1">
+                                        {new Date(notification.created_at).toLocaleString()}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                    </div>
+                  )}
+                </div>
+              )}
+              
             <button
-              className="md:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none flex-shrink-0"
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none flex-shrink-0"
               onClick={toggleMobileMenu}
               aria-label="Toggle mobile menu"
             >
               <i className={`ri-${isMobileMenuOpen ? "close" : "menu"}-line text-xl text-gray-700`}></i>
             </button>
+            </div>
           </div>
         </div>
       </nav>
@@ -373,44 +694,47 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
           <div className="fixed top-16 left-0 right-0 bg-white shadow-xl border-t border-gray-200 max-h-[calc(100vh-4rem)] overflow-y-auto">
             <div className="px-4 sm:px-6 py-4 sm:py-6 space-y-2">
               <button
-                onClick={() => handleNavigation("/", "Mobile Home")}
+                onClick={() => handleNavigation("/")}
                 className="flex items-center w-full px-3 sm:px-4 py-3 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 font-medium"
               >
                 <i className="ri-home-line text-lg mr-3 flex-shrink-0"></i>
                 <span className="text-sm sm:text-base">Home</span>
               </button>
               <button
-                onClick={() => handleNavigation("/evacuation-center", "Mobile Evacuation Centers")}
+                onClick={() => handleNavigation("/evacuation-center")}
                 className="flex items-center w-full px-3 sm:px-4 py-3 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 font-medium"
               >
                 <i className="ri-building-2-line text-lg mr-3 flex-shrink-0"></i>
                 <span className="text-sm sm:text-base">Evacuation Centers</span>
               </button>
               <button
-                onClick={() => handleNavigation("/safety-protocols", "Mobile Safety Protocols")}
-                className="flex items-center w-full px-3 sm:px-4 py-3 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 font-medium"
-              >
-                <i className="ri-shield-check-line text-lg mr-3 flex-shrink-0"></i>
-                <span className="text-sm sm:text-base">Safety Protocols</span>
-              </button>
-              <button
-                onClick={() => handleNavigation("/incident-report", "Mobile Incident Report")}
+                onClick={() => handleNavigation("/incident-report")}
                 className="flex items-center w-full px-3 sm:px-4 py-3 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 font-medium"
               >
                 <i className="ri-error-warning-line text-lg mr-3 flex-shrink-0"></i>
                 <span className="text-sm sm:text-base">Report Incident</span>
               </button>
+              <button
+                onClick={() => {
+                  if (window.location.pathname === "/") {
+                    // If already on home page, scroll to FAQ section
+                    const faqSection = document.getElementById("faq-section")
+                    if (faqSection) {
+                      faqSection.scrollIntoView({ behavior: "smooth" })
+                    }
+                  } else {
+                    // If on other page, navigate to home and then scroll to FAQ
+                    window.location.href = "/#faq-section"
+                  }
+                  // Close mobile menu
+                  closeMobileMenu()
+                }}
+                className="flex items-center w-full px-3 sm:px-4 py-3 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 font-medium"
+              >
+                <i className="ri-question-line text-lg mr-3 flex-shrink-0"></i>
+                <span className="text-sm sm:text-base">FAQ</span>
+              </button>
 
-              {/* Mobile Admin Dashboard Link */}
-              {userData?.userType === "admin" && (
-                <button
-                  onClick={() => handleNavigation("/admin/dashboard", "Mobile Admin Dashboard")}
-                  className="flex items-center w-full px-3 sm:px-4 py-3 rounded-lg text-white bg-red-600 hover:bg-red-700 transition-all duration-200 font-medium"
-                >
-                  <i className="ri-admin-line text-lg mr-3 flex-shrink-0"></i>
-                  <span className="text-sm sm:text-base">Admin Panel</span>
-                </button>
-              )}
 
               <div className="border-t border-gray-200 my-4"></div>
 
@@ -428,8 +752,8 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-gray-900 text-sm sm:text-base truncate">
-                          {(userData?.firstName || userData?.first_name) && (userData?.lastName || userData?.last_name)
-                            ? `${userData.firstName || userData.first_name} ${userData.lastName || userData.last_name}`
+                          {( userData?.first_name) && (userData?.last_name)
+                            ? `${ userData.first_name} ${userData.last_name}`
                             : userData?.email?.split("@")[0] || "User"}
                         </p>
                         <p className="text-gray-600 text-xs sm:text-sm truncate" title={userData?.email || "No email"}>
@@ -445,7 +769,7 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
 
                   {/* Mobile Menu Items */}
                   <button
-                    onClick={() => handleNavigation("/profile", "Mobile Profile")}
+                    onClick={() => handleNavigation("/profile")}
                     className="flex items-center w-full px-3 sm:px-4 py-3 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 group"
                   >
                     <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-100 transition-colors flex-shrink-0">
@@ -458,7 +782,7 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                   </button>
 
                   <button
-                    onClick={() => handleNavigation("/history-report", "Mobile History Report")}
+                    onClick={() => handleNavigation("/history-report")}
                     className="flex items-center w-full px-3 sm:px-4 py-3 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 group"
                   >
                     <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-100 transition-colors flex-shrink-0">
@@ -471,7 +795,7 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                   </button>
 
                   <button
-                    onClick={() => handleNavigation("/feedback", "Mobile Submit Feedback")}
+                    onClick={() => handleNavigation("/feedback")}
                     className="flex items-center w-full px-3 sm:px-4 py-3 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 group"
                   >
                     <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-100 transition-colors flex-shrink-0">
@@ -499,14 +823,14 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
               ) : (
                 <div className="space-y-2">
                   <button
-                    onClick={() => handleNavigation("/auth/login", "Mobile Sign In")}
+                    onClick={() => handleNavigation("/auth/login")}
                     className="flex items-center w-full px-3 sm:px-4 py-3 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 font-medium"
                   >
                     <i className="ri-login-box-line text-lg mr-3 flex-shrink-0"></i>
                     <span className="text-sm sm:text-base">Sign In</span>
                   </button>
                   <button
-                    onClick={() => handleNavigation("/auth/signup", "Mobile Get Started")}
+                    onClick={() => handleNavigation("/auth/signup")}
                     className="flex items-center justify-center w-full px-3 sm:px-4 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 font-medium shadow-lg"
                   >
                     <i className="ri-user-add-line text-lg mr-2 flex-shrink-0"></i>
@@ -525,6 +849,13 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
         onClose={handleLogoutCancel}
         onConfirm={handleLogoutConfirm}
         isLoading={isLoggingOut}
+      />
+
+      {/* Alert Modal */}
+      <AlertModal
+        isOpen={showAlertModal}
+        onClose={() => setShowAlertModal(false)}
+        alert={selectedAlert}
       />
     </>
   )

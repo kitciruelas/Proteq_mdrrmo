@@ -13,6 +13,8 @@ import EvacuationCenterPage from "../pages/evacuation-center/page";
 import SafetyProtocolsPage from "../pages/safety-protocols/page";
 import HistoryReportPage from "../pages/history-report/page";
 import FeedbackPage from "../pages/feedback/page";
+import WelfareCheckPage from "../pages/welfare-check/page";
+import NotificationsPage from "../pages/notifications/page";
 import StaffFeedbackPage from "../pages/staff/stafffeedback/page";
 
 // Admin Components
@@ -34,6 +36,7 @@ import ActivityLogs from "../pages/admin/activity-logs/page";
 import AdminProfilePage from "../pages/admin/profile/page";
 import TeamsManagement from "../pages/admin/teams/page";
 import AdminFeedbackPage from "../pages/admin/feedback/page";
+import AdminWelfarePage from "../pages/admin/welfare/page";
 import StaffDashboard from "../pages/staff/dashboard/page";
 import StaffIncidentsPage from "../pages/staff/incidents/page";
 import StaffIncidentsMapPage from "../pages/staff/incidents/map/page";
@@ -93,6 +96,14 @@ const routes: RouteObject[] = [
   {
     path: "/feedback",
     element: <FeedbackPage />,
+  },
+  {
+    path: "/welfare-check",
+    element: <WelfareCheckPage />,
+  },
+  {
+    path: "/notifications",
+    element: <NotificationsPage />,
   },
   // Admin Auth Routes (separate from admin layout)
   {
@@ -159,6 +170,10 @@ const routes: RouteObject[] = [
       {
         path: "activity-logs",
         element: <ActivityLogs />,
+      },
+      {
+        path: "welfare",
+        element: <AdminWelfarePage />,
       },
       {
         path: "feedback",

@@ -111,13 +111,8 @@ interface UserLocation {
 
 interface EvacuationCenterMapProps {
   evacuationCenters: EvacuationCenter[];
-  evacuationRoutes?: EvacuationRoute[];
   userLocation?: UserLocation | null;
-  nearbyRadius?: number; // in kilometers
   onCenterClick?: (center: EvacuationCenter) => void;
-  onRouteClick?: (route: EvacuationRoute) => void;
-  showNearbyRadius?: boolean;
-  showRoutes?: boolean;
   height?: string;
 }
 
@@ -147,26 +142,19 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 
 const EvacuationCenterMap: React.FC<EvacuationCenterMapProps> = ({
   evacuationCenters,
-  evacuationRoutes = [],
   userLocation,
-  nearbyRadius = 5, // Default 5km radius
   onCenterClick,
-  onRouteClick,
-  showNearbyRadius = true,
-  showRoutes = true,
   height = '24rem' // Default height
 }) => {
   // Debug logging
   console.log('EvacuationCenterMap props:', {
-    centersCount: evacuationCenters.length,
-    routesCount: evacuationRoutes.length,
-    routes: evacuationRoutes,
-    showRoutes
+    centersCount: evacuationCenters.length
   });
   const [mapCenter, setMapCenter] = useState<[number, number]>([16.4567890, 120.5678901]); // Default to San Juan, Batangas
   const [mapZoom, setMapZoom] = useState(13);
   const [mapLoading, setMapLoading] = useState(true);
   const [mapError, setMapError] = useState(false);
+  const [legendVisible, setLegendVisible] = useState(true);
 
   // Update map center when user location is available
   useEffect(() => {
@@ -198,7 +186,7 @@ const EvacuationCenterMap: React.FC<EvacuationCenterMapProps> = ({
     return () => clearTimeout(timeout);
   }, [mapLoading]);
 
-  // Filter nearby centers if user location is available
+  // Filter nearby centers if user location is available (for drive-in nearby)
   const nearbyCenters = userLocation 
     ? evacuationCenters.filter(center => 
         calculateDistance(
@@ -206,7 +194,7 @@ const EvacuationCenterMap: React.FC<EvacuationCenterMapProps> = ({
           userLocation.longitude, 
           center.latitude, 
           center.longitude
-        ) <= nearbyRadius
+        ) <= 20 // 20km max for drive-in nearby
       )
     : [];
 
@@ -237,9 +225,7 @@ const EvacuationCenterMap: React.FC<EvacuationCenterMapProps> = ({
     mapZoom,
     mapLoading,
     mapError,
-    centersCount: evacuationCenters.length,
-    routesCount: evacuationRoutes.length,
-    routes: evacuationRoutes.map(r => ({ id: r.id, name: r.name, waypointsCount: Array.isArray(r.waypoints) ? r.waypoints.length : 0 }))
+    centersCount: evacuationCenters.length
   });
 
   return (
@@ -280,15 +266,6 @@ const EvacuationCenterMap: React.FC<EvacuationCenterMapProps> = ({
             <div className="text-xs text-gray-600">Centers</div>
           </div>
         </div>
-        
-        {showRoutes && (
-          <div className="bg-white/90 backdrop-blur-sm border border-white/20 rounded-xl p-3 shadow-xl">
-            <div className="text-center">
-              <div className="text-lg font-bold text-green-600">{evacuationRoutes.length}</div>
-              <div className="text-xs text-gray-600">Routes</div>
-            </div>
-          </div>
-        )}
       </div>
 
       <div 
@@ -400,40 +377,23 @@ const EvacuationCenterMap: React.FC<EvacuationCenterMapProps> = ({
             }}
           />
 
-        {/* User location marker and radius circle */}
+        {/* User location marker */}
         {userLocation && (
-          <>
-            <Marker
-              position={[userLocation.latitude, userLocation.longitude]}
-              icon={userLocationIcon}
-            >
-              <Popup>
-                <div className="text-center">
-                  <strong>Your Location</strong>
-                  <br />
-                  <small className="text-gray-600">
-                    Lat: {userLocation.latitude.toFixed(6)}<br />
-                    Lng: {userLocation.longitude.toFixed(6)}
-                  </small>
-                </div>
-              </Popup>
-            </Marker>
-
-            {/* Nearby radius circle */}
-            {showNearbyRadius && (
-              <Circle
-                center={[userLocation.latitude, userLocation.longitude]}
-                radius={nearbyRadius * 1000} // Convert km to meters
-                pathOptions={{
-                  color: '#3b82f6',
-                  fillColor: '#3b82f6',
-                  fillOpacity: 0.1,
-                  weight: 2,
-                  dashArray: '5, 5'
-                }}
-              />
-            )}
-          </>
+          <Marker
+            position={[userLocation.latitude, userLocation.longitude]}
+            icon={userLocationIcon}
+          >
+            <Popup>
+              <div className="text-center">
+                <strong>Your Location</strong>
+                <br />
+                <small className="text-gray-600">
+                  Lat: {userLocation.latitude.toFixed(6)}<br />
+                  Lng: {userLocation.longitude.toFixed(6)}
+                </small>
+              </div>
+            </Popup>
+          </Marker>
         )}
 
         {/* Evacuation center markers */}
@@ -474,8 +434,8 @@ const EvacuationCenterMap: React.FC<EvacuationCenterMapProps> = ({
                     </p>
                     {isNearby && (
                       <p className="text-sm text-blue-600 font-medium">
-                        <i className="ri-map-pin-line mr-1"></i>
-                        Nearby ({calculateDistance(
+                        <i className="ri-car-line mr-1"></i>
+                        Drive-in Nearby ({calculateDistance(
                           userLocation!.latitude,
                           userLocation!.longitude,
                           center.latitude,
@@ -509,201 +469,50 @@ const EvacuationCenterMap: React.FC<EvacuationCenterMapProps> = ({
           );
         })}
 
-        {/* Test Route - Always visible for debugging */}
-        <Polyline
-          positions={[
-            [16.4567890, 120.5678901],
-            [16.4580000, 120.5685000],
-            [16.4595000, 120.5692000],
-            [16.4610000, 120.5700000]
-          ]}
-          pathOptions={{
-            color: '#ff0000',
-            weight: 5,
-            opacity: 0.8
-          }}
-        >
-          <Popup>
-            <div className="p-2">
-              <h3 className="font-bold text-gray-900">Test Route</h3>
-              <p className="text-sm text-gray-600">This is a test route to verify map functionality</p>
-            </div>
-          </Popup>
-        </Polyline>
-
-        {/* Evacuation Routes */}
-        {showRoutes && evacuationRoutes.map((route) => {
-          console.log(`Processing route ${route.id}:`, route);
-          
-          // Create route path from waypoints with validation
-          let routePath: [number, number][] = [];
-          
-          try {
-            let waypoints = route.waypoints;
-            
-            // Handle case where waypoints might be stored as a JSON string
-            if (typeof waypoints === 'string') {
-              try {
-                waypoints = JSON.parse(waypoints);
-              } catch (parseError) {
-                console.error('Failed to parse waypoints string for route:', route.id, parseError);
-                return null;
-              }
-            }
-            
-            if (waypoints && Array.isArray(waypoints) && waypoints.length > 0) {
-              // Convert string waypoints to object format if needed
-              const processedWaypoints = waypoints.map((wp: any) => {
-                if (typeof wp === 'string') {
-                  // Parse string format like "lat,lng"
-                  const parts = wp.split(',');
-                  if (parts.length === 2) {
-                    const lat = parseFloat(parts[0]);
-                    const lng = parseFloat(parts[1]);
-                    if (!isNaN(lat) && !isNaN(lng)) {
-                      return { lat, lng };
-                    }
-                  }
-                  return null;
-                } else if (wp && typeof wp === 'object' && typeof wp.lat === 'number' && typeof wp.lng === 'number') {
-                  return wp;
-                }
-                return null;
-              }).filter(wp => wp !== null);
-              
-              routePath = processedWaypoints
-                .filter(wp => wp && typeof wp.lat === 'number' && typeof wp.lng === 'number' && 
-                       !isNaN(wp.lat) && !isNaN(wp.lng) &&
-                       wp.lat >= -90 && wp.lat <= 90 && 
-                       wp.lng >= -180 && wp.lng <= 180)
-                .map(wp => [wp.lat, wp.lng] as [number, number]);
-              
-              console.log(`Route ${route.id} processed:`, {
-                originalWaypoints: route.waypoints,
-                processedWaypoints: processedWaypoints,
-                routePath: routePath,
-                routePathLength: routePath.length
-              });
-            }
-          } catch (error) {
-            console.error('Error processing waypoints for route:', route.id, error);
-            return null;
-          }
-          
-          if (routePath.length < 2) {
-            console.log('Skipping route with insufficient waypoints:', route.id, routePath.length);
-            return null; // Skip routes with insufficient waypoints
-          }
-          
-          const getRouteColor = (priority: string) => {
-            switch (priority) {
-              case 'emergency': return '#ef4444'; // red
-              case 'primary': return '#3b82f6';   // blue
-              case 'secondary': return '#10b981'; // green
-              default: return '#6b7280';         // gray
-            }
-          };
-          
-          const getRouteWeight = (priority: string) => {
-            switch (priority) {
-              case 'emergency': return 4;
-              case 'primary': return 3;
-              case 'secondary': return 2;
-              default: return 1;
-            }
-          };
-          
-          return (
-            <React.Fragment key={route.id}>
-              {routePath.length >= 2 && (
-                <Polyline
-                  positions={routePath}
-                  pathOptions={{
-                    color: getRouteColor(route.priority),
-                    weight: getRouteWeight(route.priority),
-                    opacity: 0.8,
-                    dashArray: route.status === 'active' ? undefined : '10, 5'
-                  }}
-                  eventHandlers={{
-                    click: () => onRouteClick?.(route)
-                  }}
-                >
-                  <Popup>
-                    <div className="p-2">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-bold text-gray-900">{route.name}</h3>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          route.priority === 'emergency' ? 'bg-red-100 text-red-800' :
-                          route.priority === 'primary' ? 'bg-blue-100 text-blue-800' :
-                          'bg-green-100 text-green-800'
-                        }`}>
-                          {route.priority.charAt(0).toUpperCase() + route.priority.slice(1)}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-600 mb-2">{route.description}</p>
-                      <div className="space-y-1 text-xs text-gray-500">
-                        <p><span className="font-medium">Distance:</span> {route.distance} km</p>
-                        <p><span className="font-medium">Time:</span> {route.estimated_time} min</p>
-                        <p><span className="font-medium">Status:</span> {route.status}</p>
-                        <p><span className="font-medium">From:</span> {route.start_location}</p>
-                        <p><span className="font-medium">To:</span> {route.end_location}</p>
-                      </div>
-                    </div>
-                  </Popup>
-                </Polyline>
-              )}
-            </React.Fragment>
-          );
-        })}
       </MapContainer>
       </div>
 
-      {/* Enhanced Map Legend */}
-      <div className="absolute bottom-4 left-4 z-10 bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-4">
-        <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center">
-          <i className="ri-information-line mr-2 text-blue-600"></i>
-          Legend
-        </h4>
-        <div className="space-y-2">
-          <div className="flex items-center text-sm">
-            <div className="w-4 h-4 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full mr-3 shadow-sm"></div>
-            <span className="text-gray-700 font-medium">Open Centers</span>
-          </div>
-          <div className="flex items-center text-sm">
-            <div className="w-4 h-4 bg-gradient-to-r from-red-500 to-rose-500 rounded-full mr-3 shadow-sm"></div>
-            <span className="text-gray-700 font-medium">Full Centers</span>
-          </div>
-          <div className="flex items-center text-sm">
-            <div className="w-4 h-4 bg-gradient-to-r from-gray-500 to-slate-500 rounded-full mr-3 shadow-sm"></div>
-            <span className="text-gray-700 font-medium">Closed Centers</span>
-          </div>
-          {showRoutes && evacuationRoutes.length > 0 && (
-            <>
-              <div className="border-t border-gray-200 pt-2 mt-2">
-                <h5 className="text-xs font-bold text-gray-700 mb-2">Routes</h5>
-                <div className="space-y-1">
-                  <div className="flex items-center text-xs">
-                    <div className="w-3 h-1 bg-red-500 mr-2"></div>
-                    <span className="text-gray-600">Emergency</span>
-                  </div>
-                  <div className="flex items-center text-xs">
-                    <div className="w-3 h-1 bg-blue-500 mr-2"></div>
-                    <span className="text-gray-600">Primary</span>
-                  </div>
-                  <div className="flex items-center text-xs">
-                    <div className="w-3 h-1 bg-green-500 mr-2"></div>
-                    <span className="text-gray-600">Secondary</span>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-          {userLocation && (
-            <div className="flex items-center text-sm border-t border-gray-200 pt-2 mt-2">
-              <div className="w-4 h-4 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full mr-3 shadow-sm animate-pulse"></div>
-              <span className="text-gray-700 font-medium">Your Location</span>
+      {/* Enhanced Map Legend with Toggle */}
+      <div className="absolute bottom-4 left-4 z-10">
+        {/* Legend Toggle Button */}
+        <button
+          onClick={() => setLegendVisible(!legendVisible)}
+          className="mb-2 bg-white/90 backdrop-blur-sm hover:bg-white border border-white/20 rounded-xl p-3 shadow-xl hover:shadow-2xl transition-all duration-300 hover:scale-105"
+          title={legendVisible ? "Hide Legend" : "Show Legend"}
+        >
+          <i className={`ri-${legendVisible ? 'arrow-down-s' : 'arrow-up-s'}-line text-blue-600 text-lg transition-transform duration-300`}></i>
+        </button>
+
+        {/* Legend Content */}
+        <div className={`bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-4 transition-all duration-300 ${
+          legendVisible 
+            ? 'opacity-100 translate-y-0 max-h-96' 
+            : 'opacity-0 -translate-y-4 max-h-0 overflow-hidden'
+        }`}>
+          <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center">
+            <i className="ri-information-line mr-2 text-blue-600"></i>
+            Legend
+          </h4>
+          <div className="space-y-2">
+            <div className="flex items-center text-sm">
+              <div className="w-4 h-4 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full mr-3 shadow-sm"></div>
+              <span className="text-gray-700 font-medium">Open Centers</span>
             </div>
-          )}
+            <div className="flex items-center text-sm">
+              <div className="w-4 h-4 bg-gradient-to-r from-red-500 to-rose-500 rounded-full mr-3 shadow-sm"></div>
+              <span className="text-gray-700 font-medium">Full Centers</span>
+            </div>
+            <div className="flex items-center text-sm">
+              <div className="w-4 h-4 bg-gradient-to-r from-gray-500 to-slate-500 rounded-full mr-3 shadow-sm"></div>
+              <span className="text-gray-700 font-medium">Closed Centers</span>
+            </div>
+            {userLocation && (
+              <div className="flex items-center text-sm border-t border-gray-200 pt-2 mt-2">
+                <div className="w-4 h-4 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full mr-3 shadow-sm animate-pulse"></div>
+                <span className="text-gray-700 font-medium">Your Location</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

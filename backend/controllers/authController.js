@@ -843,6 +843,67 @@ const logoutUser = async (req, res) => {
     }
 };
 
+// Logout for admin
+const logoutAdmin = async (req, res) => {
+    try {
+        // Get admin info from token for logging
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
+
+        let adminId = null;
+        let adminEmail = 'unknown';
+
+        if (token) {
+            try {
+                if (!process.env.JWT_SECRET) {
+                    console.error('JWT_SECRET environment variable is not set');
+                    return res.status(500).json({
+                        success: false,
+                        message: 'Server configuration error'
+                    });
+                }
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                if (decoded.type === 'admin') {
+                    adminId = decoded.id;
+                    adminEmail = decoded.email;
+                }
+            } catch (tokenError) {
+                console.log('Could not decode token for admin logout logging:', tokenError.message);
+            }
+        }
+
+        // Log admin logout activity
+        try {
+            const clientIP = getClientIP(req);
+            // Only log if we have a valid admin ID
+            if (adminId) {
+                await pool.execute(`
+                    INSERT INTO activity_logs (admin_id, action, details, ip_address, created_at)
+                    VALUES (?, 'admin_logout', ?, ?, NOW())
+                `, [adminId, `Admin ${adminEmail} logged out successfully`, clientIP]);
+                console.log('✅ Activity logged: admin_logout for admin ID:', adminId);
+            } else {
+                console.log('⚠️ Could not log admin logout: admin ID not found in token');
+            }
+        } catch (logError) {
+            console.error('❌ Failed to log admin logout activity:', logError.message);
+            // Don't fail the main operation if logging fails
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Admin logout successful'
+        });
+
+    } catch (error) {
+        console.error('Admin logout error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error'
+        });
+    }
+};
+
 // Logout for staff
 const logoutStaff = async (req, res) => {
     try {
@@ -913,5 +974,6 @@ module.exports = {
     verifyOTP,
     resetPassword,
     logoutUser,
+    logoutAdmin,
     logoutStaff
 };

@@ -44,6 +44,10 @@ interface MonthlyIncidentData {
 interface PeakHoursData {
   hour: number;
   incident_count: number;
+  earliest_datetime: string;
+  latest_datetime: string;
+  sample_datetimes: string;
+  consecutive_dates: string;
 }
 
 const AdminDashboard: React.FC = () => {
@@ -62,9 +66,10 @@ const AdminDashboard: React.FC = () => {
   const [priorityData, setPriorityData] = useState<PriorityData[]>([]);
   const [locationIncidents, setLocationIncidents] = useState<Array<{ name: string; [key: string]: string | number }>>([]);
   const [monthlyIncidents, setMonthlyIncidents] = useState<MonthlyIncidentData[]>([]);
-  const [trendsPeriod, setTrendsPeriod] = useState<'days' | 'weeks' | 'months'>('months');
-  const [trendsLimit, setTrendsLimit] = useState<number>(12);
+  const [trendsPeriod, setTrendsPeriod] = useState<'days' | 'weeks' | 'months'>('days');
+  const [trendsLimit, setTrendsLimit] = useState<number>(7);
   const [peakHoursData, setPeakHoursData] = useState<PeakHoursData[]>([]);
+  const [peakHoursDateRange, setPeakHoursDateRange] = useState<string>('');
   const [seasonalData, setSeasonalData] = useState<Array<{
     period: string;
     floods?: number;
@@ -75,14 +80,34 @@ const AdminDashboard: React.FC = () => {
     total: number;
   }>>([]);
   const [loading, setLoading] = useState(true);
+  const [trendsLoading, setTrendsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchDashboardStats();
+    const loadData = async () => {
+      await fetchDashboardStats();
+      // Ensure trends data is loaded
+      await fetchTrendsData(trendsPeriod, trendsLimit);
+    };
+    loadData();
   }, []);
+
+  // Reset limit when period changes to ensure valid combinations
+  useEffect(() => {
+    if (trendsPeriod === 'days' && trendsLimit > 30) {
+      setTrendsLimit(7); // Default to 7 days for better performance
+    } else if (trendsPeriod === 'weeks' && trendsLimit > 52) {
+      setTrendsLimit(12); // Default to 12 weeks
+    } else if (trendsPeriod === 'months' && trendsLimit > 24) {
+      setTrendsLimit(12); // Default to 12 months
+    }
+  }, [trendsPeriod]);
 
   // Fetch trends data when filter changes
   useEffect(() => {
+    console.log(`useEffect triggered - Period: ${trendsPeriod}, Limit: ${trendsLimit}`);
+    // Force refresh trends data when period or limit changes
+    setTrendsLoading(true);
     fetchTrendsData(trendsPeriod, trendsLimit);
   }, [trendsPeriod, trendsLimit]);
 
@@ -95,30 +120,148 @@ const AdminDashboard: React.FC = () => {
       '6 PM', '7 PM', '8 PM', '9 PM', '10 PM', '11 PM'
     ];
 
-    return peakHours.map(item => ({
-      name: hourLabels[item.hour] || `${item.hour}:00`,
-      count: item.incident_count,
-      percentage: 0 // Will be calculated if total is provided
-    }));
+    return peakHours.map(item => {
+      // Parse sample datetimes from the API response
+      const sampleDatetimes = item.sample_datetimes ? item.sample_datetimes.split(',') : [];
+      const mostRecentDatetime = sampleDatetimes[0] || item.latest_datetime;
+      
+      // Parse consecutive dates and format them in compact format
+      const consecutiveDates = item.consecutive_dates ? item.consecutive_dates.split(',') : [];
+      
+      // Group dates by month and format them compactly
+      const groupDatesByMonth = (dates: string[]) => {
+        const monthGroups: { [key: string]: number[] } = {};
+        
+        dates.forEach(dateStr => {
+          if (!dateStr) return;
+          const date = new Date(dateStr);
+          const monthKey = date.toLocaleDateString('en-US', { month: 'short' });
+          const day = date.getDate();
+          
+          if (!monthGroups[monthKey]) {
+            monthGroups[monthKey] = [];
+          }
+          monthGroups[monthKey].push(day);
+        });
+        
+        // Sort days within each month
+        Object.keys(monthGroups).forEach(month => {
+          monthGroups[month].sort((a, b) => a - b);
+        });
+        
+        // Format as "Sep 1, 4, 5, Oct 23, 30"
+        return Object.keys(monthGroups)
+          .sort((a, b) => {
+            const monthOrder = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                               'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return monthOrder.indexOf(a) - monthOrder.indexOf(b);
+          })
+          .map(month => `${month} ${monthGroups[month].join(', ')}`)
+          .join(', ');
+      };
+      
+      const formattedConsecutiveDates = groupDatesByMonth(consecutiveDates);
+      
+      // Format datetime for display
+      const formatDateTime = (dateTimeString: string): { date: string; time: string; full: string } | null => {
+        if (!dateTimeString) return null;
+        const date = new Date(dateTimeString);
+        return {
+          date: date.toLocaleDateString('en-US', { 
+            month: 'long', 
+            day: 'numeric' 
+          }),
+          time: date.toLocaleTimeString('en-US', { 
+            hour: 'numeric', 
+            minute: '2-digit',
+            hour12: true 
+          }),
+          full: date.toLocaleDateString('en-US', { 
+            month: 'long', 
+            day: 'numeric' 
+          }) + ' ' + date.toLocaleTimeString('en-US', { 
+            hour: 'numeric', 
+            minute: '2-digit',
+            hour12: true 
+          })
+        };
+      };
+
+
+      const mostRecent = formatDateTime(mostRecentDatetime);
+      const earliest = formatDateTime(item.earliest_datetime);
+      const latest = formatDateTime(item.latest_datetime);
+      
+      // Create consecutive date range from the compact format
+      const consecutiveDateRange = formattedConsecutiveDates || mostRecent?.date || '';
+
+      return {
+        name: hourLabels[item.hour] || `${item.hour}:00`,
+        count: item.incident_count,
+        percentage: 0, // Will be calculated if total is provided
+        // Add detailed time information for tooltips with actual dates and times
+        timeLabel: `${hourLabels[item.hour] || `${item.hour}:00`} (${mostRecent?.full || ''})`,
+        hour: item.hour,
+        formattedTime: hourLabels[item.hour] || `${item.hour}:00`,
+        // Add display name with time format like "8 PM"
+        displayName: hourLabels[item.hour] || `${item.hour}:00`,
+        // Add date and time information
+        sampleDate: mostRecent?.date || '',
+        sampleTime: mostRecent?.time || '',
+        sampleDateTime: mostRecent?.full || '',
+        dateRange: consecutiveDateRange,
+        timeRange: earliest?.time && latest?.time ? `${earliest.time} - ${latest.time}` : '',
+        consecutiveDates: formattedConsecutiveDates.split(', '),
+        earliestDateTime: item.earliest_datetime,
+        latestDateTime: item.latest_datetime
+      };
+    });
+  };
+
+  // Helper function to calculate date range for peak hours analysis
+  const calculatePeakHoursDateRange = () => {
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+    
+    const formatDate = (date: Date) => {
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric' 
+      });
+    };
+    
+    return `${formatDate(startDate)} - ${formatDate(endDate)}`;
   };
 
   const fetchTrendsData = async (period: 'days' | 'weeks' | 'months' = 'months', limit: number = 12) => {
     try {
+      setTrendsLoading(true);
+      console.log(`Fetching trends data for period: ${period}, limit: ${limit}`);
       const trendsResponse = await adminDashboardApi.getMonthlyTrends(period, limit);
-      if (trendsResponse.success) {
+      console.log('Trends response:', trendsResponse);
+      
+      if (trendsResponse.success && trendsResponse.trendsData) {
         // Map the API response to the expected interface format
         const mappedData = trendsResponse.trendsData.map(item => ({
           month: item.period, // Use period as month for compatibility
           period: item.period,
-          total_incidents: item.total_incidents,
-          resolved_incidents: item.resolved_incidents,
-          high_priority_incidents: item.high_priority_incidents
+          total_incidents: item.total_incidents || 0,
+          resolved_incidents: item.resolved_incidents || 0,
+          high_priority_incidents: item.high_priority_incidents || 0
         }));
+        console.log('Mapped data:', mappedData);
         setMonthlyIncidents(mappedData);
+      } else {
+        console.warn('Trends API returned success: false or no data');
+        setMonthlyIncidents([]);
       }
     } catch (error) {
-      console.warn('Failed to fetch trends data:', error);
+      console.error('Failed to fetch trends data:', error);
       setMonthlyIncidents([]);
+    } finally {
+      setTrendsLoading(false);
     }
   };
 
@@ -209,7 +352,21 @@ const AdminDashboard: React.FC = () => {
       if (analyticsResponse.success) {
         setPriorityData(analyticsResponse.analytics.incidentPriority || []);
         setMonthlyIncidents(analyticsResponse.analytics.monthlyIncidents || []);
-        setPeakHoursData(analyticsResponse.analytics.peakHours || []);
+        
+        // Handle peak hours data with proper typing
+        const peakHoursData = analyticsResponse.analytics.peakHours || [];
+        const typedPeakHoursData: PeakHoursData[] = peakHoursData.map((item: any) => ({
+          hour: item.hour,
+          incident_count: item.incident_count,
+          earliest_datetime: item.earliest_datetime || '',
+          latest_datetime: item.latest_datetime || '',
+          sample_datetimes: item.sample_datetimes || '',
+          consecutive_dates: item.consecutive_dates || ''
+        }));
+        setPeakHoursData(typedPeakHoursData);
+        
+        // Set the date range for peak hours analysis
+        setPeakHoursDateRange(calculatePeakHoursDateRange());
       }
 
       // Set location incidents data from location response
@@ -409,53 +566,80 @@ const AdminDashboard: React.FC = () => {
                   onChange={(e) => setTrendsLimit(parseInt(e.target.value))}
                   className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value={7}>7</option>
-                  <option value={12}>12</option>
-                  <option value={24}>24</option>
-                  <option value={30}>30</option>
+                  {trendsPeriod === 'days' && (
+                    <>
+                      <option value={7}>7 days</option>
+                      <option value={14}>14 days</option>
+                      <option value={30}>30 days</option>
+                    </>
+                  )}
+                  {trendsPeriod === 'weeks' && (
+                    <>
+                      <option value={4}>4 weeks</option>
+                      <option value={8}>8 weeks</option>
+                      <option value={12}>12 weeks</option>
+                      <option value={24}>24 weeks</option>
+                    </>
+                  )}
+                  {trendsPeriod === 'months' && (
+                    <>
+                      <option value={6}>6 months</option>
+                      <option value={12}>12 months</option>
+                      <option value={18}>18 months</option>
+                      <option value={24}>24 months</option>
+                    </>
+                  )}
                 </select>
-                <span className="text-sm text-gray-600">{trendsPeriod}</span>
               </div>
               <button
                 onClick={() => fetchTrendsData(trendsPeriod, trendsLimit)}
-                className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors"
+                disabled={trendsLoading}
+                className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <i className="ri-refresh-line mr-1"></i>
-                Refresh
+                <i className={`ri-refresh-line mr-1 ${trendsLoading ? 'animate-spin' : ''}`}></i>
+                {trendsLoading ? 'Loading...' : 'Refresh'}
               </button>
             </div>
           </div>
-          <LineChart
-            data={monthlyIncidents.map(item => ({
-              date: item.month || item.period || 'Unknown',
-              count: item.total_incidents || 0
-            }))}
-            title={`Incident Trends (Last ${trendsLimit} ${trendsPeriod})`}
-            color="#10b981"
-            height={350}
-          />
-        </div>
-        {monthlyIncidents.length === 0 && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-            <div className="flex items-center">
-              <i className="ri-information-line text-green-500 text-lg mr-3"></i>
-              <div>
-                <h4 className="text-green-800 font-medium">Trends Analytics</h4>
-                <p className="text-green-600 text-sm mt-1">
-                  This line chart shows incident volume trends with customizable time periods.
-                  Use the filters above to view data by days, weeks, or months. It helps identify patterns and peak periods.
+          {trendsLoading || (monthlyIncidents.length === 0 && !trendsLoading) ? (
+            <div className="flex items-center justify-center h-[350px] bg-gray-50 rounded-lg">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-500">
+                  {trendsLoading ? 'Loading trends data...' : 'Loading chart data...'}
+                </p>
+                <p className="text-sm text-gray-400 mt-1">
+                  Period: {trendsPeriod} | Limit: {trendsLimit}
                 </p>
               </div>
             </div>
-          </div>
-        )}
+          ) : monthlyIncidents.length > 0 ? (
+            <LineChart
+              data={monthlyIncidents.map(item => ({
+                date: item.period || item.month || 'Unknown',
+                count: item.total_incidents || 0
+              }))}
+              title={`Incident Trends (Last ${trendsLimit} ${trendsPeriod})`}
+              color="#10b981"
+              height={350}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-[350px] bg-gray-50 rounded-lg">
+              <div className="text-center">
+                <i className="ri-bar-chart-line text-4xl text-gray-400 mb-2"></i>
+                <p className="text-gray-500">No data available for the selected period</p>
+                <p className="text-sm text-gray-400 mt-1">Try adjusting the time range or check back later</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Peak Hours Analysis */}
       <div className="grid grid-cols-1 gap-6">
         <BarChart
           data={formatPeakHoursData(peakHoursData)}
-          title="Peak Hours Analysis (Last 30 Days)"
+          title={`Peak Hours Analysis - Incident Distribution by Time (${peakHoursDateRange || 'Last 30 Days'})`}
           dataKey="count"
           color="#f59e0b"
           height={350}
@@ -467,8 +651,8 @@ const AdminDashboard: React.FC = () => {
               <div>
                 <h4 className="text-amber-800 font-medium">Peak Hours Analysis</h4>
                 <p className="text-amber-600 text-sm mt-1">
-                  This bar chart shows incident distribution by hour of day over the past 30 days.
-                  It helps identify peak hours when incidents are most likely to occur, enabling better resource allocation.
+                  This bar chart shows incident distribution by hour of day over the period {peakHoursDateRange || 'last 30 days'}.
+                  Hover over bars to see consecutive incident dates and exact times in 12-hour format (e.g., "September 30 8:30 PM"). It helps identify peak hours when incidents are most likely to occur, enabling better resource allocation.
                 </p>
               </div>
             </div>

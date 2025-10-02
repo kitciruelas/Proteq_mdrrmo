@@ -5,13 +5,14 @@ const pool = require('../config/conn');
 // GET - Get activity logs with pagination and filtering
 router.get('/', async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 20, 
+    const {
+      page = 1,
+      limit = 20,
       user_type = 'all',
       action = 'all',
       date_from = '',
-      date_to = ''
+      date_to = '',
+      search = ''
     } = req.query;
     
     // First, check if the activity_logs table exists
@@ -54,22 +55,35 @@ router.get('/', async (req, res) => {
     
     // Add date range filter
     if (date_from && date_from.trim() !== '') {
-      whereClause += ' AND DATE(created_at) >= ?';
-      queryParams.push(date_from);
+      whereClause += ' AND al.created_at >= ?';
+      queryParams.push(date_from + ' 00:00:00');
     }
-    
+
     if (date_to && date_to.trim() !== '') {
-      whereClause += ' AND DATE(created_at) <= ?';
-      queryParams.push(date_to);
+      whereClause += ' AND al.created_at <= ?';
+      queryParams.push(date_to + ' 23:59:59');
+    }
+
+    // Add search filter
+    if (search && search.trim() !== '') {
+      whereClause += ' AND (al.action LIKE ? OR al.details LIKE ? OR a.name LIKE ? OR s.name LIKE ? OR CONCAT(u.first_name, " ", u.last_name) LIKE ?)';
+      const searchPattern = `%${search.trim()}%`;
+      queryParams.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
     }
     
     console.log('🔍 Building query with whereClause:', whereClause);
     console.log('🔍 Query parameters:', queryParams);
     
     // Get total count
-    const countQuery = `SELECT COUNT(*) as total FROM activity_logs ${whereClause}`;
+    const countQuery = `
+      SELECT COUNT(*) as total FROM activity_logs al
+      LEFT JOIN admin a ON al.admin_id = a.admin_id
+      LEFT JOIN staff s ON al.staff_id = s.id
+      LEFT JOIN general_users u ON al.general_user_id = u.user_id
+      ${whereClause}
+    `;
     console.log('📊 Count query:', countQuery);
-    
+
     const [countResult] = await pool.execute(countQuery, queryParams);
     const totalLogs = countResult[0].total;
     const totalPages = Math.ceil(totalLogs / limit);
@@ -252,9 +266,9 @@ router.post('/log', async (req, res) => {
     }
     
     await pool.execute(`
-      INSERT INTO activity_logs (admin_id, staff_id, general_user_id, action, details, ip_address, user_agent, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
-    `, [admin_id, staff_id, general_user_id, action, details, ip_address, user_agent]);
+      INSERT INTO activity_logs (admin_id, staff_id, general_user_id, action, details, ip_address, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, NOW())
+    `, [admin_id, staff_id, general_user_id, action, details, ip_address]);
     
     res.json({
       success: true,

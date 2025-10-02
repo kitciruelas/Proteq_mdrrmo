@@ -27,14 +27,40 @@ const SafetyProtocolsPage: React.FC = () => {
 
   useEffect(() => {
     const authState = getAuthState();
-    setIsAuthenticated(authState.isAuthenticated);
-    setUserData(authState.userData);
+    // Only allow user type to access this page
+    if (authState.isAuthenticated && authState.userType !== 'user') {
+      // Redirect admin/staff users to their respective dashboards
+      if (authState.userType === 'admin') {
+        window.location.href = '/admin';
+        return;
+      } else if (authState.userType === 'staff') {
+        window.location.href = '/staff';
+        return;
+      }
+    }
+    
+    const isUserAuth = authState.isAuthenticated && authState.userType === 'user';
+    setIsAuthenticated(isUserAuth);
+    setUserData(isUserAuth ? authState.userData : null);
 
     // Listen for authentication state changes
     const handleAuthStateChange = () => {
       const newAuthState = getAuthState();
-      setIsAuthenticated(newAuthState.isAuthenticated);
-      setUserData(newAuthState.userData);
+      // Only allow user type to access this page
+      if (newAuthState.isAuthenticated && newAuthState.userType !== 'user') {
+        // Redirect admin/staff users to their respective dashboards
+        if (newAuthState.userType === 'admin') {
+          window.location.href = '/admin';
+          return;
+        } else if (newAuthState.userType === 'staff') {
+          window.location.href = '/staff';
+          return;
+        }
+      }
+      
+      const isNewUserAuth = newAuthState.isAuthenticated && newAuthState.userType === 'user';
+      setIsAuthenticated(isNewUserAuth);
+      setUserData(isNewUserAuth ? newAuthState.userData : null);
     };
 
     window.addEventListener('storage', handleAuthStateChange);

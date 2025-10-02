@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { incidentsApi, teamsApi, staffManagementApi, activityLogsApi } from '../../../../utils/api';
+import { incidentsApi, teamsApi, staffManagementApi } from '../../../../utils/api';
 import ExportPreviewModal from '../../../../components/base/ExportPreviewModal';
 import { ExportUtils } from '../../../../utils/exportUtils';
 import type { ExportColumn } from '../../../../utils/exportUtils';
@@ -101,7 +101,7 @@ const ViewIncidents: React.FC = () => {
   const [teams, setTeams] = useState<Team[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
@@ -125,11 +125,19 @@ const ViewIncidents: React.FC = () => {
   // Helper function to check if assignment button should be disabled
   const isAssignmentButtonDisabled = () => {
     if (isAssigning) return true;
-    if (assignmentType === 'staff' && selectedIncident?.status === 'pending') return true;
-    if (assignmentType === 'team' && selectedTeamId) {
+    if (!selectedIncident) return true;
+    
+    if (assignmentType === 'staff') {
+      if (selectedIncident.status === 'pending') return true;
+      return !selectedStaffId;
+    }
+    
+    if (assignmentType === 'team') {
+      if (!selectedTeamId) return false; // Allow unassigning team
       const selectedTeam = teams.find(t => t.id === selectedTeamId);
       return selectedTeam?.member_count === 0;
     }
+    
     return false;
   };
 
@@ -241,29 +249,6 @@ const ViewIncidents: React.FC = () => {
     return match ? match[1].trim() : '';
   };
 
-  const handleStatusChange = async (incidentId: number, newStatus: Incident['status']) => {
-    try {
-      // API call to update incident status
-      await incidentsApi.updateIncidentStatus(incidentId, {
-        status: newStatus,
-        notes: `Status changed to ${newStatus}`
-      });
-
-      // Update local state after successful API call
-      setIncidents(prev => prev.map(incident =>
-        incident.id === incidentId
-          ? {
-              ...incident,
-              status: newStatus,
-              dateResolved: newStatus === 'resolved' ? new Date().toISOString() : incident.dateResolved
-            }
-          : incident
-      ));
-    } catch (error) {
-      console.error('Error updating incident status:', error);
-      // Could add a toast notification here for user feedback
-    }
-  };
 
   const handleAssignTeam = async (incidentId: number, teamId: number | null) => {
     try {
@@ -293,6 +278,12 @@ const ViewIncidents: React.FC = () => {
           sent: true,
           details: response.emailDetails
         });
+        // Show success toast
+        const selectedTeam = teams.find(t => t.id === teamId);
+        showToast({ 
+          type: 'success', 
+          message: `Team "${selectedTeam?.name || 'Unknown'}" assigned successfully!` 
+        });
       } else {
         setEmailStatus({
           sent: false,
@@ -301,9 +292,8 @@ const ViewIncidents: React.FC = () => {
       }
 
       setTimeout(() => {
-        setShowAssignmentModal(false);
-        setEmailStatus(null);
-      }, 3000);
+        closeAssignmentModal();
+      }, 2000);
 
     } catch (error) {
       console.error('Error assigning team to incident:', error);
@@ -445,6 +435,12 @@ const ViewIncidents: React.FC = () => {
           sent: true,
           details: response.emailDetails
         });
+        // Show success toast
+        const selectedStaff = staff.find(s => s.id === staffId);
+        showToast({ 
+          type: 'success', 
+          message: `Staff member "${selectedStaff?.name || 'Unknown'}" assigned successfully!` 
+        });
       } else {
         setEmailStatus({
           sent: false,
@@ -453,9 +449,8 @@ const ViewIncidents: React.FC = () => {
       }
 
       setTimeout(() => {
-        setShowAssignmentModal(false);
-        setEmailStatus(null);
-      }, 3000);
+        closeAssignmentModal();
+      }, 2000);
 
     } catch (error) {
       console.error('Error assigning staff to incident:', error);
@@ -478,7 +473,18 @@ const ViewIncidents: React.FC = () => {
     setAssignmentType(type);
     setSelectedTeamId(incident.assignedTeamId || null);
     setSelectedStaffId(incident.assignedStaffId || null);
+    setEmailStatus(null); // Reset email status
     setShowAssignmentModal(true);
+  };
+
+  const closeAssignmentModal = () => {
+    setShowAssignmentModal(false);
+    setSelectedIncident(null);
+    setAssignmentType('team');
+    setSelectedTeamId(null);
+    setSelectedStaffId(null);
+    setEmailStatus(null);
+    setIsAssigning(false);
   };
 
   const filteredIncidents = incidents.filter(incident => {
@@ -1179,12 +1185,25 @@ const ViewIncidents: React.FC = () => {
 
       {/* Assignment Modal */}
       {showAssignmentModal && selectedIncident && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
-            <div className="p-6 border-b border-gray-200">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
+          onClick={closeAssignmentModal}
+        >
+          <div 
+            className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">
                 Assign {assignmentType === 'team' ? 'Team' : 'Staff'} to Incident #{selectedIncident.id}
               </h3>
+              <button
+                onClick={closeAssignmentModal}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+                disabled={isAssigning}
+              >
+                <i className="ri-close-line text-xl"></i>
+              </button>
             </div>
             <div className="p-6 space-y-4">
               {assignmentType === 'team' ? (
@@ -1211,16 +1230,32 @@ const ViewIncidents: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="">No Team Assigned</option>
-                    {teams.map((team) => (
-                      <option 
-                        key={team.id} 
-                        value={team.id}
-                        disabled={team.member_count === 0}
-                        className={team.member_count === 0 ? 'text-gray-400' : ''}
-                      >
-                        {team.name} ({team.member_count} members){team.member_count === 0 ? ' - No members available' : ''}
-                      </option>
-                    ))}
+                    {teams
+                      .filter(team => team.member_count > 0) // Only show teams with members
+                      .map((team) => (
+                        <option 
+                          key={team.id} 
+                          value={team.id}
+                        >
+                          {team.name} ({team.member_count} members)
+                        </option>
+                      ))}
+                    {teams.filter(team => team.member_count === 0).length > 0 && (
+                      <optgroup label="Teams with no members (disabled)">
+                        {teams
+                          .filter(team => team.member_count === 0)
+                          .map((team) => (
+                            <option 
+                              key={team.id} 
+                              value={team.id}
+                              disabled
+                              className="text-gray-400"
+                            >
+                              {team.name} (0 members) - Add members first
+                            </option>
+                          ))}
+                      </optgroup>
+                    )}
                   </select>
                   
                   {/* Show selected team details */}
@@ -1290,11 +1325,15 @@ const ViewIncidents: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="">No Staff Assigned</option>
-                    {staff.filter(s => s.status === 'active' || s.status === 1).map((staffMember) => (
-                      <option key={staffMember.id} value={staffMember.id}>
-                        {staffMember.name} - {staffMember.position}
-                      </option>
-                    ))}
+                    {staff
+                      .filter(s => s.status === 'active' || s.status === 1)
+                      .sort((a, b) => a.name.localeCompare(b.name)) // Sort alphabetically
+                      .map((staffMember) => (
+                        <option key={staffMember.id} value={staffMember.id}>
+                          {staffMember.name} - {staffMember.position}
+                          {staffMember.team_name && ` (${staffMember.team_name})`}
+                        </option>
+                      ))}
                   </select>
                   <p className="text-sm text-blue-600 mt-2">
                     <i className="ri-mail-line mr-1"></i>
@@ -1391,7 +1430,7 @@ const ViewIncidents: React.FC = () => {
               
               <div className="flex justify-end space-x-3">
                 <button
-                  onClick={() => setShowAssignmentModal(false)}
+                  onClick={closeAssignmentModal}
                   className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                   disabled={isAssigning}
                 >
@@ -1405,7 +1444,10 @@ const ViewIncidents: React.FC = () => {
                       // Check if team has members before assigning
                       const selectedTeam = teams.find(t => t.id === selectedTeamId);
                       if (selectedTeam && selectedTeam.member_count === 0) {
-                        alert('Cannot assign team with no members. Please add members to the team first.');
+                        showToast({ 
+                          type: 'error', 
+                          message: 'Cannot assign team with no members. Please add members to the team first.' 
+                        });
                         return;
                       }
                       handleAssignTeam(selectedIncident.id, selectedTeamId);
@@ -1419,6 +1461,17 @@ const ViewIncidents: React.FC = () => {
                       ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
                       : 'bg-blue-600 text-white hover:bg-blue-700'
                   }`}
+                  title={
+                    isAssignmentButtonDisabled() 
+                      ? assignmentType === 'staff' && selectedIncident?.status === 'pending'
+                        ? 'Staff assignment not available for pending incidents'
+                        : assignmentType === 'team' && selectedTeamId && teams.find(t => t.id === selectedTeamId)?.member_count === 0
+                        ? 'Cannot assign team with no members'
+                        : 'Please select a team or staff member'
+                      : assignmentType === 'team' 
+                        ? (selectedTeamId ? 'Assign selected team' : 'Unassign team')
+                        : 'Assign selected staff member'
+                  }
                 >
                   {isAssigning ? (
                     <>
@@ -1426,7 +1479,12 @@ const ViewIncidents: React.FC = () => {
                       Assigning...
                     </>
                   ) : (
-                    'Assign'
+                    <>
+                      {assignmentType === 'team' 
+                        ? (selectedTeamId ? 'Assign Team' : 'Unassign Team')
+                        : 'Assign Staff'
+                      }
+                    </>
                   )}
                 </button>
               </div>

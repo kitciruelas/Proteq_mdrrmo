@@ -47,6 +47,9 @@ const activityLogsRoutes = require('./routes/activityLogsRoutes');
 const publicRoutes = require('./routes/publicRoutes');
 const feedbackRoutes = require('./routes/feedbackRoutes');
 const staffDashboardRoutes = require('./routes/staffDashboardRoutes');
+const welfareRoutes = require('./routes/welfareRoutes');
+const adminWelfareRoutes = require('./routes/adminWelfareRoutes');
+const notificationsRoutes = require('./routes/notificationsRoutes');
 
 // Routing service proxy
 const routingRoutes = require('./routes/routingRoutes');
@@ -70,6 +73,9 @@ app.use('/api/activity-logs', activityLogsRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/staff/dashboard', staffDashboardRoutes);
+app.use('/api/welfare', welfareRoutes);
+app.use('/api/admin/welfare', adminWelfareRoutes);
+app.use('/api/notifications', notificationsRoutes);
 app.use('/api/routing', routingRoutes);
 
 // Health check route

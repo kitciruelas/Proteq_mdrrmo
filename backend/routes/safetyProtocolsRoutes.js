@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { authenticateAdmin } = require('../middleware/authMiddleware');
+const NotificationService = require('../services/notificationService');
 
 // Configure multer storage for safety protocol attachments
 const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -140,6 +141,20 @@ router.post('/', authenticateAdmin, async (req, res) => {
       VALUES (?, ?, ?, ?, ?)
     `;
     const [result] = await pool.execute(insertSql, [title, description, String(type).toLowerCase(), file_attachment, finalCreatedBy]);
+
+    // Create notification for all users
+    try {
+      await NotificationService.createSafetyProtocolNotification({
+        id: result.insertId,
+        title: title,
+        description: description,
+        type: String(type).toLowerCase()
+      });
+      console.log('Notification created for safety protocol:', result.insertId);
+    } catch (notificationError) {
+      console.error('Error creating notification for safety protocol:', notificationError);
+      // Don't fail the protocol creation if notification fails
+    }
 
     // Log the protocol creation
     try {

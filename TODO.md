@@ -1,10 +1,4 @@
-- [x] Update grid to xl:grid-cols-6 for 6 cards
-- [x] Replace "Resolved Today" card with "Resolved" card using stats.resolvedIncidents
-- [x] Add "High Priority" card using stats.highPriorityIncidents
-- [x] Remove resolvedCasesToday calculation
-- [x] Create backend route for staff dashboard stats
-- [x] Add staffDashboardApi in frontend
-- [x] Update dashboard to use API for stats instead of frontend calculation
-- [x] Fix incidents API to use getStaffIncidents instead of getIncidents for assigned incidents
-- [x] Update Priority Statistics to calculate from assigned incidents instead of global stats
-- [ ] Test the backend route and frontend integration
+- [x] Add filter section to admin feedback page
+  - [x] Add filter UI with buttons for All, User, Staff
+  - [x] Implement filtering logic to display feedback based on selected type
+  - [x] Update empty state messages for filtered results

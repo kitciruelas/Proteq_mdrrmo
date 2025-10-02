@@ -3,8 +3,11 @@
 import { Link, useNavigate } from "react-router-dom"
 import { useState, useEffect } from "react"
 import Navbar from "../../components/Navbar"
+import Carousel from "../../components/base/Carousel"
+import AnimatedCounter from "../../components/base/AnimatedCounter"
 import { getAuthState, type UserData } from "../../utils/auth"
 import { publicApi } from "../../utils/api"
+import { useScrollAnimation } from "../../hooks/useScrollAnimation"
 
 export default function Home() {
   const navigate = useNavigate()
@@ -35,30 +38,53 @@ export default function Home() {
   const [testimonialsError, setTestimonialsError] = useState<string | null>(null)
   const [testimonialsLimit, setTestimonialsLimit] = useState(3)
   const [showAllTestimonials, setShowAllTestimonials] = useState(false)
+  
+  // Scroll animation for stats section
+  const { ref: statsRef, isVisible: statsVisible } = useScrollAnimation({
+    threshold: 0.2,
+    rootMargin: '0px 0px -100px 0px',
+    triggerOnce: true
+  })
 
   useEffect(() => {
     // Check authentication state using the new utility
     const authState = getAuthState()
-    setIsLoggedIn(authState.isAuthenticated)
-    setUserData(authState.userData)
-
-    // Redirect staff users to their dashboard
-    if (authState.isAuthenticated && authState.userType === "staff") {
-      navigate("/staff")
-      return
+    
+    // Redirect admin/staff users to their respective dashboards
+    if (authState.isAuthenticated) {
+      if (authState.userType === "admin") {
+        navigate("/admin")
+        return
+      } else if (authState.userType === "staff") {
+        navigate("/staff")
+        return
+      }
     }
+    
+    // Only show user-specific content for user type
+    const isUserAuth = authState.isAuthenticated && authState.userType === "user"
+    setIsLoggedIn(isUserAuth)
+    setUserData(isUserAuth ? authState.userData : null)
 
     // Listen for storage changes to update authentication state
     const handleStorageChange = () => {
       const newAuthState = getAuthState()
-      setIsLoggedIn(newAuthState.isAuthenticated)
-      setUserData(newAuthState.userData)
-
-      // Redirect staff users to their dashboard
-      if (newAuthState.isAuthenticated && newAuthState.userType === "staff") {
-        navigate("/staff")
-        return
+      
+      // Redirect admin/staff users to their respective dashboards
+      if (newAuthState.isAuthenticated) {
+        if (newAuthState.userType === "admin") {
+          navigate("/admin")
+          return
+        } else if (newAuthState.userType === "staff") {
+          navigate("/staff")
+          return
+        }
       }
+      
+      // Only show user-specific content for user type
+      const isNewUserAuth = newAuthState.isAuthenticated && newAuthState.userType === "user"
+      setIsLoggedIn(isNewUserAuth)
+      setUserData(isNewUserAuth ? newAuthState.userData : null)
     }
 
     window.addEventListener("storage", handleStorageChange)
@@ -71,6 +97,18 @@ export default function Home() {
       window.removeEventListener("authStateChanged", handleStorageChange)
     }
   }, [navigate])
+
+  useEffect(() => {
+    // Handle hash navigation to FAQ section
+    if (window.location.hash === "#faq-section") {
+      setTimeout(() => {
+        const faqSection = document.getElementById("faq-section")
+        if (faqSection) {
+          faqSection.scrollIntoView({ behavior: "smooth" })
+        }
+      }, 100) // Small delay to ensure page is loaded
+    }
+  }, [])
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -295,20 +333,20 @@ export default function Home() {
           <div className="max-w-7xl mx-auto">
             {isLoggedIn ? (
               // Authenticated user content
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8 md:gap-10 mb-16 md:mb-20">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8 mb-16 md:mb-20">
                 {userData?.userType === "staff" && (
                   <Link
                     to="/staff"
-                    className="bg-white border-2 border-gray-100 rounded-2xl p-8 md:p-10 hover:shadow-2xl hover:border-purple-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2"
+                    className="bg-white border-2 border-gray-100 rounded-2xl p-6 md:p-8 hover:shadow-2xl hover:border-purple-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2 flex flex-col h-full"
                   >
                     <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-purple-100 to-purple-200 rounded-2xl flex items-center justify-center mb-6 md:mb-8 group-hover:scale-110 transition-all duration-300">
                       <i className="ri-dashboard-3-line text-3xl md:text-4xl text-purple-600"></i>
                     </div>
                     <h3 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3 md:mb-4">Staff Dashboard</h3>
-                    <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed">
+                    <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed flex-grow">
                       Access your staff dashboard with emergency management tools
                     </p>
-                    <div className="flex items-center text-purple-600 group-hover:text-purple-700">
+                    <div className="flex items-center text-purple-600 group-hover:text-purple-700 mt-auto">
                       <span className="font-semibold text-lg">Go to Dashboard</span>
                       <i className="ri-arrow-right-line ml-3 group-hover:translate-x-2 transition-transform duration-300"></i>
                     </div>
@@ -317,16 +355,16 @@ export default function Home() {
 
                 <Link
                   to="/incident-report"
-                  className="bg-white border-2 border-gray-100 rounded-2xl p-8 md:p-10 hover:shadow-2xl hover:border-red-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2"
+                  className="bg-white border-2 border-gray-100 rounded-2xl p-6 md:p-8 hover:shadow-2xl hover:border-red-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2 flex flex-col h-full"
                 >
                   <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-red-100 to-red-200 rounded-2xl flex items-center justify-center mb-6 md:mb-8 group-hover:scale-110 transition-all duration-300">
                     <i className="ri-error-warning-line text-3xl md:text-4xl text-red-600"></i>
                   </div>
                   <h3 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3 md:mb-4">Report Incident</h3>
-                  <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed">
+                  <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed flex-grow">
                     Submit emergency incidents and safety concerns with real-time tracking
                   </p>
-                  <div className="flex items-center text-red-600 group-hover:text-red-700">
+                  <div className="flex items-center text-red-600 group-hover:text-red-700 mt-auto">
                     <span className="font-semibold text-lg">Report Now</span>
                     <i className="ri-arrow-right-line ml-3 group-hover:translate-x-2 transition-transform duration-300"></i>
                   </div>
@@ -334,16 +372,16 @@ export default function Home() {
 
                 <Link
                   to="/evacuation-center"
-                  className="bg-white border-2 border-gray-100 rounded-2xl p-8 md:p-10 hover:shadow-2xl hover:border-blue-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2"
+                  className="bg-white border-2 border-gray-100 rounded-2xl p-6 md:p-8 hover:shadow-2xl hover:border-blue-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2 flex flex-col h-full"
                 >
                   <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl flex items-center justify-center mb-6 md:mb-8 group-hover:scale-110 transition-all duration-300">
                     <i className="ri-building-2-line text-3xl md:text-4xl text-blue-600"></i>
                   </div>
                   <h3 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3 md:mb-4">Evacuation Centers</h3>
-                  <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed">
+                  <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed flex-grow">
                     Find nearby evacuation centers with real-time capacity and status updates
                   </p>
-                  <div className="flex items-center text-blue-600 group-hover:text-blue-700">
+                  <div className="flex items-center text-blue-600 group-hover:text-blue-700 mt-auto">
                     <span className="font-semibold text-lg">View Centers</span>
                     <i className="ri-arrow-right-line ml-3 group-hover:translate-x-2 transition-transform duration-300"></i>
                   </div>
@@ -351,17 +389,34 @@ export default function Home() {
 
                 <Link
                   to="/safety-protocols"
-                  className="bg-white border-2 border-gray-100 rounded-2xl p-8 md:p-10 hover:shadow-2xl hover:border-green-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2"
+                  className="bg-white border-2 border-gray-100 rounded-2xl p-6 md:p-8 hover:shadow-2xl hover:border-green-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2 flex flex-col h-full"
                 >
                   <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-green-100 to-green-200 rounded-2xl flex items-center justify-center mb-6 md:mb-8 group-hover:scale-110 transition-all duration-300">
                     <i className="ri-shield-check-line text-3xl md:text-4xl text-green-600"></i>
                   </div>
                   <h3 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3 md:mb-4">Safety Protocols</h3>
-                  <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed">
+                  <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed flex-grow">
                     Access comprehensive emergency procedures and safety guidelines
                   </p>
-                  <div className="flex items-center text-green-600 group-hover:text-green-700">
+                  <div className="flex items-center text-green-600 group-hover:text-green-700 mt-auto">
                     <span className="font-semibold text-lg">View Protocols</span>
+                    <i className="ri-arrow-right-line ml-3 group-hover:translate-x-2 transition-transform duration-300"></i>
+                  </div>
+                </Link>
+
+                <Link
+                  to="/welfare-check"
+                  className="bg-white border-2 border-gray-100 rounded-2xl p-6 md:p-8 hover:shadow-2xl hover:border-purple-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2 flex flex-col h-full"
+                >
+                  <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-purple-100 to-purple-200 rounded-2xl flex items-center justify-center mb-6 md:mb-8 group-hover:scale-110 transition-all duration-300">
+                    <i className="ri-heart-pulse-line text-3xl md:text-4xl text-purple-600"></i>
+                  </div>
+                  <h3 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3 md:mb-4">Welfare Check</h3>
+                  <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed flex-grow">
+                    Report your status and location during emergencies for safety tracking
+                  </p>
+                  <div className="flex items-center text-purple-600 group-hover:text-purple-700 mt-auto">
+                    <span className="font-semibold text-lg">Check In</span>
                     <i className="ri-arrow-right-line ml-3 group-hover:translate-x-2 transition-transform duration-300"></i>
                   </div>
                 </Link>
@@ -369,19 +424,19 @@ export default function Home() {
             ) : (
               // Non-authenticated user content - MDRRMO Services
               <>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8 md:gap-10 mb-16 md:mb-20">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8 mb-16 md:mb-20">
                   <Link
                     to="/evacuation-center"
-                    className="bg-white border-2 border-gray-100 rounded-2xl p-8 md:p-10 hover:shadow-2xl hover:border-blue-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2"
+                    className="bg-white border-2 border-gray-100 rounded-2xl p-6 md:p-8 hover:shadow-2xl hover:border-blue-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2 flex flex-col h-full"
                   >
                     <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl flex items-center justify-center mb-6 md:mb-8 group-hover:scale-110 transition-all duration-300">
                       <i className="ri-building-2-line text-3xl md:text-4xl text-blue-600"></i>
                     </div>
                     <h3 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3 md:mb-4">Evacuation Centers</h3>
-                    <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed">
+                    <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed flex-grow">
                       View available evacuation centers in Rosario, Batangas with capacity and contact information
                     </p>
-                    <div className="flex items-center text-blue-600 group-hover:text-blue-700">
+                    <div className="flex items-center text-blue-600 group-hover:text-blue-700 mt-auto">
                       <span className="font-semibold text-lg">View Centers</span>
                       <i className="ri-arrow-right-line ml-3 group-hover:translate-x-2 transition-transform duration-300"></i>
                     </div>
@@ -389,16 +444,16 @@ export default function Home() {
 
                   <Link
                     to="/safety-protocols"
-                    className="bg-white border-2 border-gray-100 rounded-2xl p-8 md:p-10 hover:shadow-2xl hover:border-green-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2"
+                    className="bg-white border-2 border-gray-100 rounded-2xl p-6 md:p-8 hover:shadow-2xl hover:border-green-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2 flex flex-col h-full"
                   >
                     <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-green-100 to-green-200 rounded-2xl flex items-center justify-center mb-6 md:mb-8 group-hover:scale-110 transition-all duration-300">
                       <i className="ri-shield-check-line text-3xl md:text-4xl text-green-600"></i>
                     </div>
                     <h3 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3 md:mb-4">Safety Protocols</h3>
-                    <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed">
+                    <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed flex-grow">
                       Access emergency procedures and safety guidelines for various disaster scenarios
                     </p>
-                    <div className="flex items-center text-green-600 group-hover:text-green-700">
+                    <div className="flex items-center text-green-600 group-hover:text-green-700 mt-auto">
                       <span className="font-semibold text-lg">View Protocols</span>
                       <i className="ri-arrow-right-line ml-3 group-hover:translate-x-2 transition-transform duration-300"></i>
                     </div>
@@ -406,17 +461,34 @@ export default function Home() {
 
                   <Link
                     to="/incident-report"
-                    className="bg-white border-2 border-gray-100 rounded-2xl p-8 md:p-10 hover:shadow-2xl hover:border-red-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2"
+                    className="bg-white border-2 border-gray-100 rounded-2xl p-6 md:p-8 hover:shadow-2xl hover:border-red-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2 flex flex-col h-full"
                   >
                     <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-red-100 to-red-200 rounded-2xl flex items-center justify-center mb-6 md:mb-8 group-hover:scale-110 transition-all duration-300">
                       <i className="ri-error-warning-line text-3xl md:text-4xl text-red-600"></i>
                     </div>
                     <h3 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3 md:mb-4">Report Incident</h3>
-                    <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed">
+                    <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed flex-grow">
                       Report emergencies and safety concerns to MDRRMO Rosario
                     </p>
-                    <div className="flex items-center text-red-600 group-hover:text-red-700">
+                    <div className="flex items-center text-red-600 group-hover:text-red-700 mt-auto">
                       <span className="font-semibold text-lg">Report Now</span>
+                      <i className="ri-arrow-right-line ml-3 group-hover:translate-x-2 transition-transform duration-300"></i>
+                    </div>
+                  </Link>
+
+                  <Link
+                    to="/welfare-check"
+                    className="bg-white border-2 border-gray-100 rounded-2xl p-6 md:p-8 hover:shadow-2xl hover:border-purple-200 transition-all duration-300 cursor-pointer group hover:-translate-y-2 flex flex-col h-full"
+                  >
+                    <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-purple-100 to-purple-200 rounded-2xl flex items-center justify-center mb-6 md:mb-8 group-hover:scale-110 transition-all duration-300">
+                      <i className="ri-heart-pulse-line text-3xl md:text-4xl text-purple-600"></i>
+                    </div>
+                    <h3 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3 md:mb-4">Welfare Check</h3>
+                    <p className="text-gray-600 mb-6 md:mb-8 text-lg leading-relaxed flex-grow">
+                      Report your status and location during emergencies for safety tracking
+                    </p>
+                    <div className="flex items-center text-purple-600 group-hover:text-purple-700 mt-auto">
+                      <span className="font-semibold text-lg">Check In</span>
                       <i className="ri-arrow-right-line ml-3 group-hover:translate-x-2 transition-transform duration-300"></i>
                     </div>
                   </Link>
@@ -467,14 +539,13 @@ export default function Home() {
                 color: "from-orange-100 to-orange-200",
                 iconColor: "text-orange-600",
               },
-           {
-  icon: "ri-hotel-line", // or "ri-building-2-line" para mukhang shelter
-  title: "Evacuation Centers",
-  desc: "Nearby designated safe shelters with capacity info",
-  color: "from-green-100 to-green-200",
-  iconColor: "text-green-600",
-},
-
+              {
+                icon: "ri-hotel-line",
+                title: "Evacuation Centers",
+                desc: "Nearby designated safe shelters with capacity info",
+                color: "from-blue-100 to-blue-200",
+                iconColor: "text-blue-600",
+              },
               {
                 icon: "ri-shield-star-line",
                 title: "Safety Protocols",
@@ -508,25 +579,26 @@ export default function Home() {
       </section>
 
       {/* Stats */}
-      <section className="bg-gradient-to-br from-slate-50 to-blue-50 py-20 md:py-28">
+      <section ref={statsRef} className="bg-gradient-to-br from-slate-50 to-blue-50 py-20 md:py-28">
         <div className="container mx-auto px-4 lg:px-8 max-w-7xl">
           {loadingStats ? (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 md:gap-10">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
               {[1, 2, 3, 4].map((i) => (
                 <div
                   key={i}
-                  className="bg-white rounded-3xl shadow-xl border-2 border-gray-100 p-10 md:p-12 hover:shadow-2xl transition-all duration-300"
+                  className="bg-gray-50 rounded-xl p-6 md:p-8 animate-pulse"
                 >
-                  <div className="flex flex-col items-center justify-center text-center">
-                    <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl flex items-center justify-center mb-6 animate-pulse">
+                  <div className="text-center">
+                    {/* Icon */}
+                    <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
                       <div className="w-8 h-8 bg-gray-300 rounded"></div>
                     </div>
-                    <div className="text-3xl md:text-4xl font-bold text-blue-700 mb-3 animate-pulse">
-                      <div className="h-10 bg-gray-200 rounded w-20 mx-auto"></div>
-                    </div>
-                    <div className="text-gray-600 animate-pulse">
-                      <div className="h-5 bg-gray-200 rounded w-24 mx-auto"></div>
-                    </div>
+
+                    {/* Number */}
+                    <div className="h-10 bg-gray-200 rounded w-20 mx-auto mb-2"></div>
+
+                    {/* Label */}
+                    <div className="h-5 bg-gray-200 rounded w-24 mx-auto"></div>
                   </div>
                 </div>
               ))}
@@ -542,65 +614,71 @@ export default function Home() {
               </p>
             </div>
           ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 md:gap-10">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
               {[
                 {
                   label: "Responders",
                   value: `${stats.responders}+`,
                   icon: "ri-user-star-line",
-                  color: "from-blue-500 to-blue-600",
-                  bgColor: "from-blue-50 to-blue-100",
+                  color: "text-blue-600",
+                  bgColor: "bg-blue-50",
+                  iconBg: "bg-blue-100"
                 },
                 {
                   label: "Evacuation Centers",
                   value: stats.evacuationCenters.toString(),
                   icon: "ri-building-2-line",
-                  color: "from-green-500 to-green-600",
-                  bgColor: "from-green-50 to-green-100",
+                  color: "text-green-600",
+                  bgColor: "bg-green-50",
+                  iconBg: "bg-green-100"
                 },
                 {
                   label: "Residents Covered",
                   value: `${stats.residentsCovered}+`,
                   icon: "ri-shield-user-line",
-                  color: "from-purple-500 to-purple-600",
-                  bgColor: "from-purple-50 to-purple-100",
+                  color: "text-purple-600",
+                  bgColor: "bg-purple-50",
+                  iconBg: "bg-purple-100"
                 },
                 {
                   label: "Total Incidents",
                   value: stats.totalIncidents.toString(),
                   icon: "ri-alert-line",
-                  color: "from-red-500 to-red-600",
-                  bgColor: "from-red-50 to-red-100",
+                  color: "text-red-600",
+                  bgColor: "bg-red-50",
+                  iconBg: "bg-red-100"
                 },
               ].map((s, i) => (
                 <div
                   key={i}
-                  className="bg-white rounded-3xl shadow-xl border-2 border-gray-100 p-10 md:p-12 hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 group"
+                  className={`${s.bgColor} rounded-xl p-6 md:p-8 hover:shadow-lg transition-all duration-300 group`}
                 >
-                  <div className="flex flex-col items-center justify-center text-center">
-                    <div
-                      className={`w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br ${s.bgColor} rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300`}
-                    >
-                      <i className={`${s.icon} text-2xl md:text-3xl text-gray-700`}></i>
+                  <div className="text-center">
+                    {/* Icon */}
+                    <div className={`w-16 h-16 ${s.iconBg} rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-300`}>
+                      <i className={`${s.icon} text-2xl ${s.color}`}></i>
                     </div>
-                    <div
-                      className={`text-3xl md:text-4xl font-bold bg-gradient-to-r ${s.color} bg-clip-text text-transparent mb-3`}
-                    >
-                      {s.value}
+
+                    {/* Number */}
+                    <div className={`text-3xl md:text-4xl font-bold ${s.color} mb-2`}>
+                      <AnimatedCounter
+                        value={parseInt(s.value.replace(/[^\d]/g, ''))}
+                        isVisible={statsVisible}
+                        duration={2000}
+                        suffix={s.value.includes('+') ? '+' : ''}
+                        className="inline-block"
+                      />
                     </div>
-                    <div className="text-gray-600 font-medium text-lg">{s.label}</div>
+
+                    {/* Label */}
+                    <div className="text-gray-700 font-medium text-lg">{s.label}</div>
                   </div>
                 </div>
               ))}
             </div>
           )}
 
-          {/* Additional Info */}
-          <div className="text-center mt-16 md:mt-20">
-            <p className="text-gray-500">
-              Statistics updated in real-time • Last updated: {new Date().toLocaleDateString()}
-            </p>
-          </div>
+      
         </div>
       </section>
 
@@ -652,7 +730,7 @@ export default function Home() {
                         ))}
                       </div>
                     </div>
-                    <p className="text-gray-700 text-lg mb-6 leading-relaxed">{t.quote}</p>
+                    <p className="text-gray-700 text-lg mb-6 leading-relaxed italic">{t.quote}</p>
                     <div className="text-lg font-semibold text-gray-900">{t.name}</div>
                     <div className="text-sm text-gray-500 mt-1">{t.type === "Staff" ? t.department : t.type}</div>
                   </div>
@@ -704,43 +782,103 @@ export default function Home() {
       <section className="bg-white py-16 md:py-20">
         <div className="container mx-auto px-4 lg:px-8 max-w-7xl">
           <div className="text-center text-gray-600 mb-8 md:mb-12 font-semibold text-lg">In partnership with</div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-8 md:gap-12 items-center opacity-90">
-            {[
-              { name: "LGU", image: "/images/partners/lgu-pt.png", alt: "Local Government Unit" },
-              { name: "MDRRMO", image: "/images/partners/MDRRMO.png", alt: "MDRRMO  " },
-              { name: "BFP", image: "/images/partners/bfp.svg", alt: "Bureau of Fire Protection" },
-              { name: "PNP", image: "/images/partners/pnp.svg", alt: "Philippine National Police" },
-              { name: "RedCross", image: "/images/partners/redcross.svg", alt: "Philippine Red Cross" },
-              { name: "DILG", image: "/images/partners/dilg.svg", alt: "Department of Interior and Local Government" },
-            ].map((partner, i) => (
-              <div
-                key={i}
-                className="h-32 w-32 md:h-40 md:w-40 lg:h-44 lg:w-44 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto overflow-hidden border-2 border-gray-200 shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
-              >
-                <img
-                  src={partner.image || "/placeholder.svg"}
-                  alt={partner.alt}
-                  className="h-full w-full object-contain p-4"
-                  onError={(e) => {
-                    const img = e.currentTarget as HTMLImageElement
-                    img.style.display = "none"
-                    const textFallback = img.nextElementSibling as HTMLElement
-                    if (textFallback) {
-                      textFallback.style.display = "flex"
-                    }
-                  }}
-                />
-                <div className="hidden items-center justify-center text-gray-500 font-semibold text-center">
-                  {partner.name}
+          <div className="hidden sm:block">
+            <Carousel
+              items={[
+                { name: "LGU", image: "/images/partners/lgu-pt.png", alt: "Local Government Unit" },
+                { name: "MDRRMO", image: "/images/partners/MDRRMO.png", alt: "MDRRMO  " },
+                { name: "BFP", image: "/images/partners/bfp.jpg", alt: "Bureau of Fire Protection" },
+                { name: "PNP", image: "/images/partners/pnp.jpg", alt: "Philippine National Police" },
+                { name: "RedCross", image: "/images/partners/prc.png", alt: "Philippine Red Cross" },
+                { name: "MHo", image: "/images/partners/mho.png", alt: "MHO" },
+                { name: "MSWDO", image: "/images/partners/msdw.jpg", alt: "MSWDO" },
+                { name: "MVM Hospital", image: "/images/partners/mvm.jpg", alt: "MVM Hospital" },
+                { name: "BATELEC II - AREA II", image: "/images/partners/batelec.jpg", alt: "BATELEC II - AREA II" },
+              ]}
+              itemsPerView={6}
+              autoPlay={true}
+              autoPlayInterval={3000}
+              showDots={true}
+              showArrows={true}
+              className="opacity-90"
+              itemClassName="px-2"
+              renderItem={(partner, index) => (
+                <div
+                  key={index}
+                  className="h-32 w-32 md:h-40 md:w-40 lg:h-44 lg:w-44 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto overflow-hidden border-2 border-gray-200 shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+                >
+                  <img
+                    src={partner.image || "/placeholder.svg"}
+                    alt={partner.alt}
+                    className="h-full w-full object-contain p-4"
+                    onError={(e) => {
+                      const img = e.currentTarget as HTMLImageElement
+                      img.style.display = "none"
+                      const textFallback = img.nextElementSibling as HTMLElement
+                      if (textFallback) {
+                        textFallback.style.display = "flex"
+                      }
+                    }}
+                  />
+                  <div className="hidden items-center justify-center text-gray-500 font-semibold text-center">
+                    {partner.name}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )}
+            />
+          </div>
+          
+          {/* Mobile carousel with fewer items per view */}
+          <div className="block sm:hidden">
+            <Carousel
+              items={[
+                { name: "LGU", image: "/images/partners/lgu-pt.png", alt: "Local Government Unit" },
+                { name: "MDRRMO", image: "/images/partners/MDRRMO.png", alt: "MDRRMO  " },
+                { name: "BFP", image: "/images/partners/bfp.jpg", alt: "Bureau of Fire Protection" },
+                { name: "PNP", image: "/images/partners/pnp.jpg", alt: "Philippine National Police" },
+                { name: "RedCross", image: "/images/partners/prc.png", alt: "Philippine Red Cross" },
+                { name: "MHo", image: "/images/partners/mho.png", alt: "MHO" },
+                { name: "MSWDO", image: "/images/partners/msdw.jpg", alt: "MSWDO" },
+                { name: "MVM Hospital", image: "/images/partners/mvm.jpg", alt: "MVM Hospital" },
+                { name: "BATELEC II - AREA II", image: "/images/partners/batelec.jpg", alt: "BATELEC II - AREA II" },
+              ]}
+              itemsPerView={2}
+              autoPlay={true}
+              autoPlayInterval={3000}
+              showDots={true}
+              showArrows={true}
+              className="opacity-90"
+              itemClassName="px-2"
+              renderItem={(partner, index) => (
+                <div
+                  key={index}
+                  className="h-32 w-32 bg-gray-50 rounded-2xl flex items-center justify-center mx-auto overflow-hidden border-2 border-gray-200 shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+                >
+                  <img
+                    src={partner.image || "/placeholder.svg"}
+                    alt={partner.alt}
+                    className="h-full w-full object-contain p-4"
+                    onError={(e) => {
+                      const img = e.currentTarget as HTMLImageElement
+                      img.style.display = "none"
+                      const textFallback = img.nextElementSibling as HTMLElement
+                      if (textFallback) {
+                        textFallback.style.display = "flex"
+                      }
+                    }}
+                  />
+                  <div className="hidden items-center justify-center text-gray-500 font-semibold text-center">
+                    {partner.name}
+                  </div>
+                </div>
+              )}
+            />
           </div>
         </div>
       </section>
 
       {/* FAQ */}
-      <section className="bg-gradient-to-b from-white to-slate-50 py-20 md:py-28">
+      <section id="faq-section" className="bg-gradient-to-b from-white to-slate-50 py-20 md:py-28">
         <div className="container mx-auto px-4 lg:px-8 max-w-4xl">
           <h3 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 text-center mb-12 md:mb-16">
             Frequently Asked Questions
@@ -758,6 +896,26 @@ export default function Home() {
               {
                 q: "Do I need an account?",
                 a: "Browsing is open; creating an account enables alerts and faster reporting.",
+              },
+              {
+                q: "What should I do during a typhoon?",
+                a: "Stay indoors, avoid flooded areas, monitor weather updates, and follow evacuation orders if issued.",
+              },
+              {
+                q: "How can I check if my family is safe?",
+                a: "Use the Welfare Check feature to report your status and location during emergencies.",
+              },
+              {
+                q: "What emergency numbers should I call?",
+                a: "MDRRMO: (043) 311.2935, PNP: (043) 724.7026, BFP: (043) 312.1102. Click Emergency Hotline for full list.",
+              },
+              {
+                q: "How do I prepare for disasters?",
+                a: "Create an emergency kit, know evacuation routes, stay informed through our alerts, and follow safety protocols.",
+              },
+              {
+                q: "Is this service available 24/7?",
+                a: "Yes, our emergency reporting system is available 24/7. Emergency hotlines are also monitored around the clock.",
               },
             ].map((item, idx) => (
               <div

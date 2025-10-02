@@ -4,6 +4,7 @@ const pool = require('../config/conn');
 const nodemailer = require('nodemailer');
 const https = require('https');
 const { authenticateAdmin } = require('../middleware/authMiddleware');
+const NotificationService = require('../services/notificationService');
 
 // Configure nodemailer transporter
 const transporter = nodemailer.createTransport({
@@ -120,6 +121,21 @@ router.post('/', authenticateAdmin, async (req, res) => {
 
     const alertId = result.insertId;
     console.log('Created alert with ID:', alertId, 'with recipients:', recipients);
+
+    // Create notification for all users
+    try {
+      await NotificationService.createAlertNotification({
+        id: alertId,
+        title: title,
+        description: fullDescription,
+        alert_severity: alertSeverity,
+        alert_type: type
+      });
+      console.log('Notification created for alert:', alertId);
+    } catch (notificationError) {
+      console.error('Error creating notification for alert:', notificationError);
+      // Don't fail the alert creation if notification fails
+    }
 
     // Log the alert creation
     try {
@@ -529,9 +545,9 @@ async function sendAlertEmail(alertId, alertData) {
           console.log(`👷 Found ${employees.length} active university employees`);
           emailAddresses.push(...employees.map(user => user.email));
         } else if (recipient === 'emergency_responders') {
-          // Get emergency responder emails from staff table
-          const [staff] = await pool.execute('SELECT email FROM staff WHERE role IN ("nurse", "paramedic", "security", "firefighter") AND status = 1 AND availability = "available"');
-          console.log(`👨‍🚒 Found ${staff.length} available emergency responders`);
+          // Get all available staff emails for emergency response
+          const [staff] = await pool.execute('SELECT email FROM staff WHERE status = 1 AND availability = "available"');
+          console.log(`👨‍🚒 Found ${staff.length} available staff members for emergency response`);
           emailAddresses.push(...staff.map(member => member.email));
         } else if (recipient === 'all_staff') {
           // Get all staff emails

@@ -1,6 +1,6 @@
 // PDF generation with jsPDF library
 
-import jsPDF from "jspdf"
+import { jsPDF } from "jspdf"
 
 export interface ExportColumn {
   key: string
@@ -61,118 +61,122 @@ export class ExportUtils {
     const headerHeight = 45 // Increased header height for better layout
     let currentY = headerHeight
 
-    // ===== ENHANCED HEADER =====
-    doc.setFillColor(248, 250, 252)
-    doc.rect(0, 0, pageWidth, headerHeight + 5, "F")
+    const drawPageHeader = async () => {
+      // ===== ENHANCED HEADER =====
+      doc.setFillColor(248, 250, 252)
+      doc.rect(0, 0, pageWidth, headerHeight + 5, "F")
 
-    if (includeTimestamp) {
-      doc.setFontSize(10) // Slightly larger font for better readability
-      doc.setFont(undefined, "normal")
-      doc.setTextColor(75, 85, 99) // Better color contrast
-      const now = new Date()
-      const monthName = now.toLocaleString("default", { month: "long" })
-      const day = now.getDate()
-      const year = now.getFullYear()
-      let hours = now.getHours()
-      const minutes = now.getMinutes().toString().padStart(2, "0")
-      const seconds = now.getSeconds().toString().padStart(2, "0")
-      const ampm = hours >= 12 ? "PM" : "AM"
-      hours = hours % 12
-      hours = hours ? hours : 12
-      const hourStr = hours.toString().padStart(2, "0")
-      const timestampText = `Generated: ${monthName} ${day}, ${year} at ${hourStr}:${minutes}:${seconds} ${ampm}`
-      doc.text(timestampText, margin, 18)
-    }
-
-    if (logoUrl) {
-      try {
-        if (logoUrl.startsWith("data:image")) {
-          doc.addImage(logoUrl, "PNG", pageWidth - margin - 30, 10, 30, 20)
-        } else {
-          const img = new Image()
-          img.crossOrigin = "Anonymous"
-
-          const loadImagePromise = new Promise<void>((resolve, reject) => {
-            img.onload = () => {
-              try {
-                const canvas = document.createElement("canvas")
-                const ctx = canvas.getContext("2d")
-                if (!ctx) {
-                  reject(new Error("Canvas context not available"))
-                  return
-                }
-
-                const scaleFactor = 6 // Higher resolution for ultra quality
-                const maxWidth = 30
-                const maxHeight = 20
-                const aspectRatio = img.width / img.height
-
-                let drawWidth = maxWidth
-                let drawHeight = maxHeight
-
-                if (img.width > maxWidth || img.height > maxHeight) {
-                  if (aspectRatio > maxWidth / maxHeight) {
-                    drawHeight = maxWidth / aspectRatio
-                  } else {
-                    drawWidth = maxHeight * aspectRatio
-                  }
-                }
-
-                canvas.width = Math.max(img.width, drawWidth * scaleFactor)
-                canvas.height = Math.max(img.height, drawHeight * scaleFactor)
-
-                ctx.imageSmoothingEnabled = true
-                ctx.imageSmoothingQuality = "high"
-                ctx.fillStyle = "#FFFFFF"
-                ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-                const scaleX = canvas.width / img.width
-                const scaleY = canvas.height / img.height
-                const scale = Math.min(scaleX, scaleY)
-
-                const x = (canvas.width - img.width * scale) / 2
-                const y = (canvas.height - img.height * scale) / 2
-
-                ctx.drawImage(img, x, y, img.width * scale, img.height * scale)
-
-                const base64 = canvas.toDataURL("image/png", 1.0)
-                doc.addImage(base64, "PNG", pageWidth - margin - drawWidth, 10, drawWidth, drawHeight)
-                resolve()
-              } catch (error) {
-                reject(error)
-              }
-            }
-
-            img.onerror = () => {
-              reject(new Error(`Failed to load image: ${logoUrl}`))
-            }
-
-            img.src = logoUrl
-          })
-
-          try {
-            await loadImagePromise
-          } catch (imageError) {
-            console.warn("Failed to load logo, using text placeholder:", imageError)
-            doc.setFontSize(12)
-            doc.setFont(undefined, "bold")
-            doc.setTextColor(59, 130, 246)
-            doc.text("LOGO", pageWidth - margin - 25, 20)
-          }
-        }
-      } catch (error) {
-        console.warn("Failed to add logo to PDF:", error)
+      if (includeTimestamp) {
+        doc.setFontSize(10) // Slightly larger font for better readability
+        doc.setFont("helvetica", "normal")
+        doc.setTextColor(75, 85, 99) // Better color contrast
+        const now = new Date()
+        const monthName = now.toLocaleString("default", { month: "long" })
+        const day = now.getDate()
+        const year = now.getFullYear()
+        let hours = now.getHours()
+        const minutes = now.getMinutes().toString().padStart(2, "0")
+        const seconds = now.getSeconds().toString().padStart(2, "0")
+        const ampm = hours >= 12 ? "PM" : "AM"
+        hours = hours % 12
+        hours = hours ? hours : 12
+        const hourStr = hours.toString().padStart(2, "0")
+        const timestampText = `Generated: ${monthName} ${day}, ${year} at ${hourStr}:${minutes}:${seconds} ${ampm}`
+        doc.text(timestampText, margin, 18)
       }
+
+      if (logoUrl) {
+        try {
+          if (logoUrl.startsWith("data:image")) {
+            doc.addImage(logoUrl, "PNG", pageWidth - margin - 30, 10, 30, 20)
+          } else {
+            const img = new Image()
+            img.crossOrigin = "Anonymous"
+
+            const loadImagePromise = new Promise<void>((resolve, reject) => {
+              img.onload = () => {
+                try {
+                  const canvas = document.createElement("canvas")
+                  const ctx = canvas.getContext("2d")
+                  if (!ctx) {
+                    reject(new Error("Canvas context not available"))
+                    return
+                  }
+
+                  const scaleFactor = 6 // Higher resolution for ultra quality
+                  const maxWidth = 30
+                  const maxHeight = 20
+                  const aspectRatio = img.width / img.height
+
+                  let drawWidth = maxWidth
+                  let drawHeight = maxHeight
+
+                  if (img.width > maxWidth || img.height > maxHeight) {
+                    if (aspectRatio > maxWidth / maxHeight) {
+                      drawHeight = maxWidth / aspectRatio
+                    } else {
+                      drawWidth = maxHeight * aspectRatio
+                    }
+                  }
+
+                  canvas.width = Math.max(img.width, drawWidth * scaleFactor)
+                  canvas.height = Math.max(img.height, drawHeight * scaleFactor)
+
+                  ctx.imageSmoothingEnabled = true
+                  ctx.imageSmoothingQuality = "high"
+                  ctx.fillStyle = "#FFFFFF"
+                  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+                  const scaleX = canvas.width / img.width
+                  const scaleY = canvas.height / img.height
+                  const scale = Math.min(scaleX, scaleY)
+
+                  const x = (canvas.width - img.width * scale) / 2
+                  const y = (canvas.height - img.height * scale) / 2
+
+                  ctx.drawImage(img, x, y, img.width * scale, img.height * scale)
+
+                  const base64 = canvas.toDataURL("image/png", 1.0)
+                  doc.addImage(base64, "PNG", pageWidth - margin - drawWidth, 10, drawWidth, drawHeight)
+                  resolve()
+                } catch (error) {
+                  reject(error)
+                }
+              }
+
+              img.onerror = () => {
+                reject(new Error(`Failed to load image: ${logoUrl}`))
+              }
+
+              img.src = logoUrl
+            })
+
+            try {
+              await loadImagePromise
+            } catch (imageError) {
+              console.warn("Failed to load logo, using text placeholder:", imageError)
+              doc.setFontSize(12)
+              doc.setFont("helvetica", "bold")
+              doc.setTextColor(59, 130, 246)
+              doc.text("LOGO", pageWidth - margin - 25, 20)
+            }
+          }
+        } catch (error) {
+          console.warn("Failed to add logo to PDF:", error)
+        }
+      }
+
+      doc.setFontSize(18) // Larger title
+      doc.setFont("helvetica", "bold")
+      doc.setTextColor(17, 24, 39) // Darker, more professional color
+      doc.text(title, pageWidth / 2, 35, { align: "center" })
+
+      doc.setDrawColor(229, 231, 235)
+      doc.setLineWidth(0.5)
+      doc.line(margin, headerHeight, pageWidth - margin, headerHeight)
     }
 
-    doc.setFontSize(18) // Larger title
-    doc.setFont(undefined, "bold")
-    doc.setTextColor(17, 24, 39) // Darker, more professional color
-    doc.text(title, pageWidth / 2, 35, { align: "center" })
-
-    doc.setDrawColor(229, 231, 235)
-    doc.setLineWidth(0.5)
-    doc.line(margin, headerHeight, pageWidth - margin, headerHeight)
+    await drawPageHeader()
 
     // ===== ENHANCED TABLE LOGIC =====
     const headers = columns.map((col) => col.label)
@@ -215,7 +219,7 @@ export class ExportUtils {
       })
     }
 
-    const drawTableHeader = (yPos: number) => {
+    const drawTableHeader = (yPos: number, pageNumber: number) => {
       const headerHeight = 10 // Increased height
       // Gradient-like header background
       doc.setFillColor(59, 130, 246) // Professional blue
@@ -249,7 +253,7 @@ export class ExportUtils {
 
       // Header text
       doc.setTextColor(255, 255, 255) // White text on blue background
-      doc.setFont(undefined, "bold")
+      doc.setFont("helvetica", pageNumber === 1 ? "bold" : "normal")
       doc.setFontSize(8) // Slightly larger
       let xPos = margin
       headers.forEach((header, index) => {
@@ -262,21 +266,21 @@ export class ExportUtils {
             doc.text(line, xPos + 2, yPos + lineIndex * 4)
           })
         } else {
-          doc.text(headerText, xPos + 2, yPos)
+          doc.text(headerText || "", xPos + 2, yPos)
         }
         xPos += colWidth
       })
       return yPos + 8
     }
 
-    currentY += 15 // More space before table
-    currentY = drawTableHeader(currentY)
-
-    doc.setFont(undefined, "normal")
-    doc.setFontSize(7) // Slightly larger for better readability
-
     let pageNumber = 1
-    rows.forEach((row, rowIndex) => {
+    currentY += 15 // More space before table
+    currentY = drawTableHeader(currentY, pageNumber)
+
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(7) // Slightly larger for better readability
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      const row = rows[rowIndex]
       let xPos = margin
       let maxCellHeight = 8 // Increased minimum height
       const cellLines: string[][] = []
@@ -299,8 +303,9 @@ export class ExportUtils {
         })
         doc.addPage()
         pageNumber++
+        await drawPageHeader()
         currentY = headerHeight + 15
-        currentY = drawTableHeader(currentY)
+        currentY = drawTableHeader(currentY, pageNumber)
         doc.setFontSize(7)
       }
 
@@ -344,7 +349,8 @@ export class ExportUtils {
         lines.forEach((line, lineIndex) => {
           let clippedLine = line
           if (doc.getTextWidth(line) > colWidth - 6) {
-            clippedLine = doc.splitTextToSize(line, colWidth - 6)[0]
+            const split = doc.splitTextToSize(line, colWidth - 6)
+            clippedLine = Array.isArray(split) ? split[0] : split
           }
           doc.text(clippedLine, xPos + 3, startY + lineIndex * 4, {
             maxWidth: colWidth - 6,
@@ -353,7 +359,7 @@ export class ExportUtils {
         xPos += colWidth
       })
       currentY += maxCellHeight
-    })
+    }
 
     currentY += 15
     doc.setFillColor(239, 246, 255) // Light blue background
@@ -361,7 +367,7 @@ export class ExportUtils {
     doc.setDrawColor(59, 130, 246)
     doc.setLineWidth(0.3)
     doc.rect(margin, currentY, availableWidth, 15)
-    doc.setFont(undefined, "bold")
+    doc.setFont("helvetica", "bold")
     doc.setFontSize(12)
     doc.setTextColor(30, 64, 175)
     doc.text(`Total Records: ${data.length}`, pageWidth / 2, currentY + 10, { align: "center" })

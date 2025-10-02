@@ -138,6 +138,19 @@ export default function ProfilePage() {
       navigate("/auth/login")
       return
     }
+    
+    // Only allow user type to access this page
+    if (authState.userType !== 'user') {
+      // Redirect admin/staff users to their respective dashboards
+      if (authState.userType === 'admin') {
+        navigate("/admin")
+        return
+      } else if (authState.userType === 'staff') {
+        navigate("/staff")
+        return
+      }
+    }
+    
     setUserData(authState.userData || {})
     setIsAuthenticated(true)
 

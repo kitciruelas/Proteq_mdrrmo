@@ -22,9 +22,9 @@ export default function LoginPage() {
 
   const { fields, setValue, validateAll, getValues, isSubmitting, setIsSubmitting } = useForm<LoginFormData>(
     {
-      email: "",
+      email: localStorage.getItem("rememberedEmail") || "",
       password: "",
-      rememberMe: false,
+      rememberMe: !!localStorage.getItem("rememberedEmail"),
     },
     {
       email: {
@@ -128,11 +128,14 @@ export default function LoginPage() {
         setShowSuccessMessage(true)
         console.log(`Login successful for ${userType} user:`, userData)
 
-        // Store user data
+        // Always store user data in sessionStorage for auto-logout on window close
+        sessionStorage.setItem("userInfo", JSON.stringify(userData))
+
+        // If remember me is checked, store email for auto-fill
         if (formData.rememberMe) {
-          localStorage.setItem("userInfo", JSON.stringify(userData))
+          localStorage.setItem("rememberedEmail", formData.email)
         } else {
-          sessionStorage.setItem("userInfo", JSON.stringify(userData))
+          localStorage.removeItem("rememberedEmail")
         }
 
         // Notify components of auth state change

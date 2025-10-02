@@ -3,6 +3,7 @@ import { evacuationCentersApi } from '../../../../utils/api';
 import CoordinatePicker from '../../../../components/CoordinatePicker';
 import { useToast } from '../../../../components/base/Toast';
 import ExportPreviewModal from '../../../../components/base/ExportPreviewModal';
+import { ConfirmModal } from '../../../../components/base/Modal';
 import ExportUtils from '../../../../utils/exportUtils';
 import type { ExportColumn } from '../../../../utils/exportUtils';
 
@@ -400,14 +401,7 @@ const EvacuationCentersManagement: React.FC = () => {
           <p className="text-gray-600 mt-1">Manage and monitor all evacuation centers in the system</p>
         </div>
         <div className="flex space-x-3">
-          <button
-            onClick={() => setShowExportModal(true)}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-          >
-                        <i className="ri-download-line mr-2"></i>
-
-            Export Centers
-          </button>
+         
           <button
             onClick={() => {
               setFormData({});
@@ -418,6 +412,14 @@ const EvacuationCentersManagement: React.FC = () => {
           >
             <PlusIcon className="w-5 h-5 mr-2" />
             Add New Center
+          </button>
+          <button
+            onClick={() => setShowExportModal(true)}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          >
+                        <i className="ri-download-line mr-2"></i>
+
+            Export Centers
           </button>
         </div>
       </div>
@@ -816,36 +818,19 @@ const EvacuationCentersManagement: React.FC = () => {
         )}
 
         {/* Delete Confirmation Modal */}
-        {showDeleteModal && selectedCenter && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg max-w-md w-full">
-              <div className="p-6">
-                <h2 className="text-xl font-bold mb-4">Confirm Delete</h2>
-                <p className="text-gray-600 mb-6">
-                  Are you sure you want to delete the evacuation center "{selectedCenter.name}"?
-                  This action cannot be undone.
-                </p>
-                <div className="flex justify-end space-x-3">
-                  <button
-                    onClick={() => {
-                      setShowDeleteModal(false);
-                      setSelectedCenter(null);
-                    }}
-                    className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleDelete}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        <ConfirmModal
+          isOpen={showDeleteModal}
+          onClose={() => { setShowDeleteModal(false); setSelectedCenter(null); }}
+          onConfirm={handleDelete}
+          title="Delete Evacuation Center"
+          message={`Are you sure you want to delete the evacuation center "${selectedCenter?.name}"? This action cannot be undone.`}
+          confirmText="Delete Center"
+          cancelText="Cancel"
+          confirmVariant="secondary"
+          icon="ri-delete-bin-line"
+          iconColor="text-red-600"
+          isLoading={submitting}
+        />
 
         {/* Export Modal */}
         <ExportPreviewModal

@@ -926,11 +926,12 @@ const EvacuationResourcesPage: React.FC = () => {
         onConfirm={confirmDelete}
         title="Delete Resource"
         message="Are you sure you want to delete this resource? This action cannot be undone."
-        confirmText="Delete"
+        confirmText="Delete Resource"
         cancelText="Cancel"
         confirmVariant="secondary"
         icon="ri-delete-bin-line"
         iconColor="text-red-600"
+        isLoading={submitting}
       />
 
       {/* Image Modal */}

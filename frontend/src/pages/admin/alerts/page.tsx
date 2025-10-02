@@ -889,31 +889,7 @@ const AlertsManagement: React.FC = () => {
                     </div>
                   </label>
 
-                  <label className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={(newAlert?.recipients || []).includes('nearby_users')}
-                      onChange={(e) => {
-                        const currentRecipients = newAlert?.recipients || [];
-                        if (e.target.checked) {
-                          setNewAlert(prev => ({ ...prev, recipients: Array.from(new Set([...currentRecipients, 'nearby_users'])) }));
-                        } else {
-                          setNewAlert(prev => ({ ...prev, recipients: currentRecipients.filter(r => r !== 'nearby_users') }));
-                        }
-                      }}
-                      className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      disabled={!newAlert?.latitude || !newAlert?.longitude}
-                    />
-                    <div>
-                      <div className="font-medium text-gray-900">Nearby Users</div>
-                      <div className="text-sm text-gray-500">
-                        {newAlert?.latitude && newAlert?.longitude
-                          ? `Send to users within ${newAlert.radius_km || 5}km radius`
-                          : 'Select location first to enable'
-                        }
-                      </div>
-                    </div>
-                  </label>
+                  {/* Removed Nearby Users recipient option as per request */}
                 </div>
 
                 {/* Barangay Selection Dropdown */}
@@ -1338,31 +1314,7 @@ const AlertsManagement: React.FC = () => {
                     </div>
                   </label>
 
-                  <label className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={(editAlert?.recipients || []).includes('nearby_users')}
-                      onChange={(e) => {
-                        const currentRecipients = editAlert?.recipients || [];
-                        if (e.target.checked) {
-                          setEditAlert(prev => prev ? ({ ...prev, recipients: Array.from(new Set([...currentRecipients, 'nearby_users'])) }) : null);
-                        } else {
-                          setEditAlert(prev => prev ? ({ ...prev, recipients: currentRecipients.filter(r => r !== 'nearby_users') }) : null);
-                        }
-                      }}
-                      className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      disabled={!editAlert?.latitude || !editAlert?.longitude}
-                    />
-                    <div>
-                      <div className="font-medium text-gray-900">Nearby Users</div>
-                      <div className="text-sm text-gray-500">
-                        {editAlert?.latitude && editAlert?.longitude
-                          ? `Send to users within ${editAlert.radius_km || 5}km radius`
-                          : 'Select location first to enable'
-                        }
-                      </div>
-                    </div>
-                  </label>
+                  {/* Removed Nearby Users recipient option as per request */}
                 </div>
 
                 {/* Barangay Selection Dropdown */}

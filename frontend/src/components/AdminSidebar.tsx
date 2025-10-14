@@ -245,7 +245,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ collapsed = false, onToggle
           {!isCollapsed && (
             <div className="flex-1">
               <h2 className="text-lg font-bold text-gray-900">Admin Panel</h2>
-              <p className="text-sm text-gray-500">ProteQ Emergency</p>
+              <p className="text-sm text-gray-500">SoteROS Emergency</p>
             </div>
           )}
          

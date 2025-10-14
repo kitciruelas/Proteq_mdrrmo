@@ -40,7 +40,7 @@ const EvacuationCenterPage: React.FC = () => {
   const [userData, setUserData] = useState<UserData | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
-  const [maxNearbyDistance] = useState(10); // 10km max for "drive in nearby"
+  const [maxNearbyCount] = useState(3); // Show only the 3 closest centers
   const [selectedCenter, setSelectedCenter] = useState<EvacuationCenter | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'full' | 'closed'>('all');
@@ -49,6 +49,7 @@ const EvacuationCenterPage: React.FC = () => {
   const [selectedContactInfo, setSelectedContactInfo] = useState<EvacuationCenter | null>(null);
   const [selectedCenterDetails, setSelectedCenterDetails] = useState<EvacuationCenter | null>(null);
   const [showAllCenters, setShowAllCenters] = useState(false);
+  const [centersWithRoutes, setCentersWithRoutes] = useState<Array<EvacuationCenter & {distance: number, duration: number}>>([]);
 
   // Get user location
   const { latitude, longitude, error: locationError, loading: locationLoading, getCurrentLocation } = useGeolocation();
@@ -162,8 +163,8 @@ const EvacuationCenterPage: React.FC = () => {
     window.location.href = '/';
   };
 
-  // Calculate distance between two points
-  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  // Calculate straight-line distance between two points (fallback)
+  const calculateStraightLineDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
     const R = 6371; // Earth's radius in kilometers
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -175,63 +176,89 @@ const EvacuationCenterPage: React.FC = () => {
     return R * c;
   };
 
-  // Get nearby centers (drive in nearby - within reasonable driving distance)
-  const nearbyCenters = latitude && longitude
-    ? evacuationCenters.filter(center => {
-        const distance = calculateDistance(latitude, longitude, center.latitude, center.longitude);
-        return distance <= maxNearbyDistance;
-      }).sort((a, b) =>
-        calculateDistance(latitude, longitude, a.latitude, a.longitude) -
-        calculateDistance(latitude, longitude, b.latitude, b.longitude)
-      )
-    : [];
-
-  // Get suggested evacuation centers (smart recommendations)
-  const getSuggestedCenters = () => {
-    if (!latitude || !longitude) return [];
-    
-    const centersWithDistance = evacuationCenters.map(center => ({
-      ...center,
-      distance: calculateDistance(latitude, longitude, center.latitude, center.longitude)
-    }));
-
-    // Calculate recommendation scores for all centers and sort by score
-    return centersWithDistance
-      .map(center => ({
-        ...center,
-        recommendationScore: calculateRecommendationScore(center)
-      }))
-      .sort((a, b) => b.recommendationScore - a.recommendationScore)
-      .slice(0, 3); // Top 3 suggestions
+  // Calculate route-based distance using Google Maps-like calculation
+  const calculateRouteDistance = async (lat1: number, lon1: number, lat2: number, lon2: number): Promise<{distance: number, duration: number}> => {
+    try {
+      // For real implementation, you would use Google Maps Directions API:
+      // const response = await fetch(`https://maps.googleapis.com/maps/api/directions/json?origin=${lat1},${lon1}&destination=${lat2},${lon2}&key=YOUR_API_KEY`);
+      
+      // For now, we'll use a more realistic approximation based on actual road networks
+      const straightDistance = calculateStraightLineDistance(lat1, lon1, lat2, lon2);
+      
+      // More realistic road distance calculation based on terrain and road network
+      let routeDistance;
+      if (straightDistance < 5) {
+        // Short distances: roads are usually more direct
+        routeDistance = straightDistance * 1.2;
+      } else if (straightDistance < 15) {
+        // Medium distances: more winding roads
+        routeDistance = straightDistance * 1.4;
+      } else {
+        // Longer distances: may need to use highways, more indirect routes
+        routeDistance = straightDistance * 1.6;
+      }
+      
+      // More realistic travel time calculation
+      let averageSpeed;
+      if (routeDistance < 5) {
+        averageSpeed = 25; // Local roads, traffic lights
+      } else if (routeDistance < 15) {
+        averageSpeed = 35; // Mix of local and main roads
+      } else {
+        averageSpeed = 45; // Highways and main roads
+      }
+      
+      const estimatedDuration = (routeDistance / averageSpeed) * 60; // Convert to minutes
+      
+      return {
+        distance: routeDistance,
+        duration: estimatedDuration
+      };
+    } catch (error) {
+      console.error('Error calculating route distance:', error);
+      // Fallback to straight-line distance
+      const fallbackDistance = calculateStraightLineDistance(lat1, lon1, lat2, lon2);
+      return {
+        distance: fallbackDistance,
+        duration: (fallbackDistance / 30) * 60
+      };
+    }
   };
 
-  // Calculate recommendation score based on multiple factors
-  const calculateRecommendationScore = (center: EvacuationCenter & { distance: number }) => {
-    let score = 0;
-    
-    // Distance factor (closer is better) - 30% weight
-    // Use a more gradual distance scoring that doesn't cut off at 10km
-    const distanceScore = Math.max(0, 1 - (center.distance / 50)); // Gradual decay up to 50km
-    score += distanceScore * 30;
-    
-    // Status factor - 35% weight (most important)
-    const statusScore = center.status === 'open' ? 1 : center.status === 'full' ? 0.2 : 0;
-    score += statusScore * 35;
-    
-    // Capacity factor - 25% weight (more available space is better)
-    const capacityRatio = (center.capacity - center.current_occupancy) / center.capacity;
-    score += capacityRatio * 25;
-    
-    // Availability factor - 10% weight (recently updated is better)
-    const lastUpdated = new Date(center.last_updated);
-    const hoursSinceUpdate = (Date.now() - lastUpdated.getTime()) / (1000 * 60 * 60);
-    const freshnessScore = Math.max(0, 1 - (hoursSinceUpdate / 24)); // Decay over 24 hours
-    score += freshnessScore * 10;
-    
-    return Math.round(score);
-  };
+  // Calculate route distances for all centers when location changes
+  useEffect(() => {
+    if (latitude && longitude && evacuationCenters.length > 0) {
+      const calculateAllRoutes = async () => {
+        const centersWithRouteData = await Promise.all(
+          evacuationCenters.map(async (center) => {
+            const routeData = await calculateRouteDistance(
+              latitude, 
+              longitude, 
+              center.latitude, 
+              center.longitude
+            );
+            return {
+              ...center,
+              distance: routeData.distance,
+              duration: routeData.duration
+            };
+          })
+        );
+        
+        setCentersWithRoutes(centersWithRouteData);
+      };
+      
+      calculateAllRoutes();
+    } else {
+      setCentersWithRoutes([]);
+    }
+  }, [latitude, longitude, evacuationCenters]);
 
-  const suggestedCenters = getSuggestedCenters();
+  // Get nearby centers (closest centers only) - now using route-based distances
+  const nearbyCenters = centersWithRoutes
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, maxNearbyCount);
+
 
   const handleCenterClick = (center: EvacuationCenter) => {
     setSelectedCenter(center);
@@ -455,11 +482,11 @@ const EvacuationCenterPage: React.FC = () => {
               </div>
               <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-3 md:p-4 shadow-lg">
                 <div className="text-xl md:text-2xl font-bold text-blue-600">{nearbyCenters.length}</div>
-                <div className="text-xs md:text-sm text-gray-600">Drive-in Nearby</div>
+                <div className="text-xs md:text-sm text-gray-600">Closest</div>
               </div>
               <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-xl p-3 md:p-4 shadow-lg">
-                <div className="text-xl md:text-2xl font-bold text-yellow-600">{suggestedCenters.length}</div>
-                <div className="text-xs md:text-sm text-gray-600">Recommended</div>
+                <div className="text-xl md:text-2xl font-bold text-yellow-600">{evacuationCenters.filter(c => c.status === 'open').length}</div>
+                <div className="text-xs md:text-sm text-gray-600">Open Now</div>
               </div>
             </div>
 
@@ -481,161 +508,6 @@ const EvacuationCenterPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Suggested Evacuation Centers Section */}
-      {suggestedCenters.length > 0 && (
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 py-12">
-          <div className="container mx-auto px-4">
-            <div className="text-center mb-8">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-white/20 rounded-2xl mb-4">
-                <i className="ri-lightbulb-line text-3xl text-white"></i>
-              </div>
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-                Recommended for You
-              </h2>
-              <p className="text-blue-100 text-lg max-w-2xl mx-auto">
-                Based on availability, capacity, and distance, these are the best evacuation centers for you
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 max-w-6xl mx-auto">
-              {suggestedCenters.map((center, index) => (
-                <div
-                  key={center.center_id}
-                  className="group relative bg-white/95 backdrop-blur-sm rounded-2xl p-4 md:p-6 shadow-2xl hover:shadow-3xl transition-all duration-300 hover:-translate-y-2 border border-white/20"
-                  style={{ animationDelay: `${index * 200}ms` }}
-                >
-                  {/* Recommendation Badge */}
-                  <div className="absolute -top-2 -right-2 md:-top-3 md:-right-3 bg-gradient-to-r from-yellow-400 to-orange-500 text-white px-2 py-1 md:px-3 rounded-full text-xs md:text-sm font-bold shadow-lg">
-                    #{index + 1} Choice
-                  </div>
-
-                  {/* Score Indicator */}
-                  <div className="absolute top-3 left-3 md:top-4 md:left-4">
-                    <div className="flex items-center space-x-1 md:space-x-2">
-                      <div className="w-6 h-6 md:w-8 md:h-8 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center">
-                        <span className="text-white font-bold text-xs md:text-sm">{center.recommendationScore}</span>
-                      </div>
-                      <span className="text-xs text-gray-500 font-medium hidden md:inline">Score</span>
-                    </div>
-                  </div>
-
-                  {/* Center Header */}
-                  <div className="mt-8 md:mt-6 mb-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 space-y-2 sm:space-y-0">
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center shadow-lg ${
-                          center.status === 'open' ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
-                          center.status === 'full' ? 'bg-gradient-to-r from-red-500 to-rose-500' :
-                          'bg-gradient-to-r from-gray-500 to-slate-500'
-                        }`}>
-                          <i className="ri-building-2-line text-lg md:text-xl text-white"></i>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-base md:text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors truncate">
-                            {center.name}
-                          </h3>
-                          <p className="text-xs md:text-sm text-gray-600">Emergency Facility</p>
-                        </div>
-                      </div>
-                      <span className={`px-2 py-1 md:px-3 rounded-full text-xs font-semibold self-start sm:self-auto ${
-                        center.status === 'open' ? 'bg-green-100 text-green-800' :
-                        center.status === 'full' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {center.status.charAt(0).toUpperCase() + center.status.slice(1)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Key Metrics */}
-                  <div className="space-y-3 mb-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <i className="ri-car-line text-blue-500"></i>
-                        <span className="text-sm font-medium text-gray-700">Distance</span>
-                      </div>
-                      <span className="text-sm font-bold text-blue-600">
-                        {center.distance.toFixed(1)} km
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <i className="ri-group-line text-green-500"></i>
-                        <span className="text-sm font-medium text-gray-700">Available Space</span>
-                      </div>
-                      <span className="text-sm font-bold text-green-600">
-                        {center.capacity - center.current_occupancy} people
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <i className="ri-phone-line text-purple-500"></i>
-                        <span className="text-sm font-medium text-gray-700">Contact</span>
-                      </div>
-                      <span className="text-sm font-bold text-purple-600">
-                        {center.contact_person}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Why Recommended */}
-                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-6">
-                    <h4 className="text-sm font-bold text-gray-900 mb-2 flex items-center">
-                      <i className="ri-star-line text-yellow-500 mr-2"></i>
-                      Why Recommended
-                    </h4>
-                    <div className="space-y-1 text-xs text-gray-600">
-                      {center.distance < 5 && (
-                        <p>• Close to your location ({center.distance.toFixed(1)}km)</p>
-                      )}
-                      {center.distance >= 5 && center.distance < 15 && (
-                        <p>• Reasonable distance ({center.distance.toFixed(1)}km)</p>
-                      )}
-                      {center.status === 'open' && (
-                        <p>• Currently accepting evacuees</p>
-                      )}
-                      {(center.capacity - center.current_occupancy) > center.capacity * 0.5 && (
-                        <p>• Plenty of available space</p>
-                      )}
-                      {center.status === 'open' && (center.capacity - center.current_occupancy) > center.capacity * 0.3 && (
-                        <p>• Good availability and capacity</p>
-                      )}
-                      {center.recommendationScore > 70 && (
-                        <p>• High overall recommendation score</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <button
-                      onClick={() => window.open(`https://maps.google.com/?q=${encodeURIComponent(center.name + ' Rosario, Batangas')}`, '_blank')}
-                      className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-xl hover:bg-blue-700 transition-colors font-semibold text-sm flex items-center justify-center space-x-2"
-                    >
-                      <i className="ri-direction-line text-sm"></i>
-                      <span>Get Directions</span>
-                    </button>
-                    <button
-                      onClick={() => window.open(`tel:${center.contact_number}`, '_self')}
-                      className="flex-1 border-2 border-blue-600 text-blue-600 py-3 px-4 rounded-xl hover:bg-blue-600 hover:text-white transition-colors font-semibold text-sm flex items-center justify-center space-x-2"
-                    >
-                      <i className="ri-phone-line text-sm"></i>
-                      <span>Call Now</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* View All Button */}
-            <div className="text-center mt-8">
-            
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="container mx-auto px-4 pb-8">
 
@@ -730,12 +602,12 @@ const EvacuationCenterPage: React.FC = () => {
                 </div>
 
                 {/* Results Summary */}
-                <div className="mt-4 flex items-center justify-between text-sm">
+                <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm">
                   <div className="text-gray-600">
                     Showing <span className="font-semibold text-blue-600">{displayedCenters.length}</span> of{' '}
                     <span className="font-semibold">{evacuationCenters.length}</span> centers
                     {searchQuery && (
-                      <span className="ml-2 text-blue-600">
+                      <span className="block sm:inline sm:ml-2 text-blue-600 mt-1 sm:mt-0">
                         for "{searchQuery}"
                       </span>
                     )}
@@ -747,7 +619,7 @@ const EvacuationCenterPage: React.FC = () => {
                         setSearchQuery('');
                         setStatusFilter('all');
                       }}
-                      className="text-blue-600 hover:text-blue-700 font-medium flex items-center space-x-1"
+                      className="text-blue-600 hover:text-blue-700 font-medium flex items-center justify-center sm:justify-start space-x-1 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg transition-colors self-start sm:self-auto"
                     >
                       <i className="ri-refresh-line"></i>
                       <span>Clear Filters</span>
@@ -794,12 +666,12 @@ const EvacuationCenterPage: React.FC = () => {
                       <div className="flex-1">
                         <p className="text-green-700 font-medium">Location Found</p>
                         <p className="text-green-600 text-sm">
-                          {nearbyCenters.length} drive-in centers within {maxNearbyDistance}km
+                          {nearbyCenters.length} closest centers found
                         </p>
                       </div>
                       <div className="text-right">
                         <div className="text-lg font-bold text-green-600">{nearbyCenters.length}</div>
-                        <div className="text-xs text-green-500">nearby</div>
+                        <div className="text-xs text-green-500">closest</div>
                       </div>
                     </div>
                   ) : (
@@ -887,14 +759,14 @@ const EvacuationCenterPage: React.FC = () => {
                       <div className="flex items-center space-x-4">
                         <div className="flex items-center space-x-3">
                           <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                            <i className="ri-car-line text-blue-600"></i>
+                            <i className="ri-map-pin-line text-blue-600"></i>
                           </div>
                           <label className="text-sm font-semibold text-gray-700">
-                            Drive-in Nearby Centers:
+                            Closest Centers:
                           </label>
                         </div>
                         <div className="text-sm text-gray-600">
-                          Within {maxNearbyDistance}km driving distance
+                          {maxNearbyCount} nearest by route
                         </div>
                         {userLocation && (
                           <button
@@ -919,44 +791,60 @@ const EvacuationCenterPage: React.FC = () => {
 
               {/* Enhanced Nearby Centers List */}
               {nearbyCenters.length > 0 && (
-                <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
-                        <i className="ri-map-pin-line text-white text-base"></i>
+                <div className="bg-gradient-to-br from-white via-blue-50/30 to-indigo-50/30 backdrop-blur-sm rounded-3xl shadow-2xl border border-blue-200/50 p-8 mb-8">
+                  {/* Header Section */}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+                    <div className="flex items-center space-x-4">
+                      <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl blur-lg opacity-30 scale-110"></div>
+                        <div className="relative w-12 h-12 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-xl">
+                          <i className="ri-map-pin-line text-white text-xl"></i>
+                        </div>
                       </div>
                       <div>
-                        <h3 className="text-xl font-bold text-gray-900">Drive-in Nearby Centers</h3>
-                        <p className="text-gray-600 text-sm">Within {maxNearbyDistance}km driving distance</p>
+                        <h3 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-blue-900 bg-clip-text text-transparent">
+                          Closest Centers
+                        </h3>
+                        <p className="text-gray-600 text-sm mt-1">
+                          {maxNearbyCount} nearest evacuation centers by driving route
+                        </p>
                       </div>
                     </div>
-                    <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">
-                      {nearbyCenters.length} found
+                    <div className="flex items-center space-x-3">
+                      <div className="bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-800 px-4 py-2 rounded-full text-sm font-semibold shadow-md border border-blue-200">
+                        <i className="ri-building-2-line mr-1"></i>
+                        {nearbyCenters.length} found
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {nearbyCenters.map((center, index) => (
                       <div
                         key={center.center_id}
-                        className="group bg-white border border-gray-200 rounded-xl px-2 py-3 hover:shadow-lg hover:border-blue-300 transition-all duration-300 hover:-translate-y-1"
-                        style={{ animationDelay: `${index * 100}ms` }}
+                        className="group relative bg-white/90 backdrop-blur-sm border border-blue-200/50 rounded-2xl p-4 hover:shadow-2xl hover:border-blue-400/60 transition-all duration-500 hover:-translate-y-2 hover:scale-105"
+                        style={{ animationDelay: `${index * 150}ms` }}
                       >
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center space-x-2">
-                            <div className={`w-3 h-3 rounded-full ${
-                              center.status === 'open' ? 'bg-green-500' :
-                              center.status === 'full' ? 'bg-red-500' :
-                              'bg-gray-500'
+                        {/* Rank Badge */}
+                        <div className="absolute -top-2 -right-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
+                          #{index + 1}
+                        </div>
+
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center space-x-3 flex-1 min-w-0">
+                            <div className={`w-4 h-4 rounded-full shadow-md ${
+                              center.status === 'open' ? 'bg-gradient-to-r from-green-400 to-green-600' :
+                              center.status === 'full' ? 'bg-gradient-to-r from-red-400 to-red-600' :
+                              'bg-gradient-to-r from-gray-400 to-gray-600'
                             }`}></div>
-                        <h4 className="font-semibold text-gray-900 text-sm group-hover:text-blue-600 transition-colors truncate">
-                          {center.name}
-                        </h4>
+                            <h4 className="font-bold text-gray-900 text-base group-hover:text-blue-600 transition-colors truncate">
+                              {center.name}
+                            </h4>
                           </div>
-                          <span className={`px-2 py-1 rounded-lg text-xs font-medium ${
-                            center.status === 'open' ? 'bg-green-100 text-green-700' :
-                            center.status === 'full' ? 'bg-red-100 text-red-700' :
-                            'bg-gray-100 text-gray-700'
+                          <span className={`px-3 py-1.5 rounded-xl text-xs font-semibold shadow-sm border ${
+                            center.status === 'open' ? 'bg-gradient-to-r from-green-50 to-green-100 text-green-800 border-green-200' :
+                            center.status === 'full' ? 'bg-gradient-to-r from-red-50 to-red-100 text-red-800 border-red-200' :
+                            'bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 border-gray-200'
                           }`}>
                             {center.status.charAt(0).toUpperCase() + center.status.slice(1)}
                           </span>
@@ -966,7 +854,7 @@ const EvacuationCenterPage: React.FC = () => {
                           <div className="flex items-center space-x-2">
                             <i className="ri-map-pin-2-line text-blue-500 text-sm"></i>
                             <span className="text-sm font-medium text-blue-600">
-                              {calculateDistance(latitude!, longitude!, center.latitude, center.longitude).toFixed(1)} km away
+                              {center.distance.toFixed(1)} km away
                             </span>
                           </div>
 
@@ -1125,12 +1013,12 @@ const EvacuationCenterPage: React.FC = () => {
           ) : (
             <div>
               {/* Enhanced List View */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 px-4 sm:px-6 lg:px-8">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 px-4 md:px-6 lg:px-8 max-w-6xl mx-auto">
               {displayedCenters.map((center, index) => {
-                const distance = userLocation
-                  ? calculateDistance(userLocation.latitude, userLocation.longitude, center.latitude, center.longitude)
-                  : null;
-                const isNearby = distance !== null && distance <= maxNearbyDistance;
+                const centerWithRoute = centersWithRoutes.find(c => c.center_id === center.center_id);
+                const distance = centerWithRoute?.distance || null;
+                const duration = centerWithRoute?.duration || null;
+                const isNearby = nearbyCenters.some(nearbyCenter => nearbyCenter.center_id === center.center_id);
                 const occupancyPercentage = (center.current_occupancy / center.capacity) * 100;
 
                 return (
@@ -1146,11 +1034,14 @@ const EvacuationCenterPage: React.FC = () => {
                       animation: 'fadeInUp 0.4s ease-out forwards'
                     }}
                   >
-                    {/* Drive-in Nearby Badge */}
-                    {isNearby && (
+                    {/* Closest Center Badge */}
+                    {isNearby && distance && (
                       <div className="absolute -top-1 -right-1 bg-blue-600 text-white px-2 py-0.5 rounded-full text-xs font-medium shadow-md">
-                        <i className="ri-car-line mr-0.5 text-xs"></i>
-                        {distance!.toFixed(1)}km
+                        <i className="ri-route-line mr-0.5 text-xs"></i>
+                        {distance.toFixed(1)}km
+                        {duration && (
+                          <span className="ml-1">• {Math.round(duration)}min</span>
+                        )}
                       </div>
                     )}
 

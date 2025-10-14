@@ -59,6 +59,24 @@ interface Team {
   description: string;
 }
 
+// Department to Team mapping
+const departmentTeamMapping: { [key: string]: number[] } = {
+  'Emergency Response': [1], // Alpha Response Team
+  'Risk Assessment': [3], // Search and Rescue Team
+  'Medical Team': [2], // Medical Emergency Team
+  'Communications': [4], // Communications Team
+  'Logistics': [5], // Logistics Support Team
+};
+
+// Department to Availability mapping
+const departmentAvailabilityMapping: { [key: string]: string } = {
+  'Emergency Response': 'available', // Always ready for emergencies
+  'Risk Assessment': 'available', // Always monitoring risks
+  'Medical Team': 'available', // Always ready for medical emergencies
+  'Communications': 'available', // Always ready for communications
+  'Logistics': 'available', // Always ready for logistics support
+};
+
 const StaffManagement: React.FC = () => {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -78,6 +96,7 @@ const StaffManagement: React.FC = () => {
   const [totalStaff, setTotalStaff] = useState(0);
   const { showToast } = useToast();
   const [showExportPreview, setShowExportPreview] = useState(false);
+  const [filteredTeams, setFilteredTeams] = useState<Team[]>([]);
 
   useEffect(() => {
     fetchStaff();
@@ -131,11 +150,35 @@ const StaffManagement: React.FC = () => {
       
       if (data.success) {
         setTeams(data.teams || []);
+        setFilteredTeams(data.teams || []); // Initialize filtered teams
         console.log('Teams data set:', data.teams?.length || 0, 'teams');
       }
     } catch (error) {
       console.error('Error fetching teams:', error);
     }
+  };
+
+  // Function to filter teams based on selected department
+  const filterTeamsByDepartment = (department: string) => {
+    if (!department) {
+      setFilteredTeams(teams);
+      return;
+    }
+
+    const teamIds = departmentTeamMapping[department] || [];
+    const filtered = teams.filter(team => teamIds.includes(team.id));
+    setFilteredTeams(filtered);
+    
+    // Auto-select the first available team for the department
+    if (filtered.length > 0) {
+      setFormData(prev => ({ ...prev, team_id: filtered[0].id.toString() }));
+    } else {
+      setFormData(prev => ({ ...prev, team_id: '' }));
+    }
+    
+    // Auto-set availability based on department
+    const defaultAvailability = departmentAvailabilityMapping[department] || 'available';
+    setFormData(prev => ({ ...prev, availability: defaultAvailability }));
   };
 
   const handleStatusChange = async (staffId: number, newStatus: Staff['status']) => {
@@ -215,6 +258,8 @@ const StaffManagement: React.FC = () => {
       availability: 'available',
       team_id: ''
     });
+    // Reset filtered teams to show all teams when adding new staff
+    setFilteredTeams(teams);
     setIsEditing(true);
     setShowStaffModal(true);
   };
@@ -230,6 +275,8 @@ const StaffManagement: React.FC = () => {
       availability: staffMember.availability,
       team_id: staffMember.team_id?.toString() || ''
     });
+    // Filter teams based on the staff member's department
+    filterTeamsByDepartment(staffMember.department);
     setIsEditing(true);
     setShowStaffModal(true);
   };
@@ -286,7 +333,14 @@ const StaffManagement: React.FC = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    
+    // If department changes, filter teams and auto-select appropriate team
+    if (name === 'department') {
+      filterTeamsByDepartment(value);
+      setFormData(prev => ({ ...prev, [name]: value }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleAssignTeam = (staffMember: Staff) => {
@@ -430,23 +484,6 @@ const StaffManagement: React.FC = () => {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Availability</label>
-          <select
-            name="availability"
-            value={formData.availability}
-            onChange={handleInputChange}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            required
-          >
-            <option value="available">Available</option>
-            <option value="busy">Busy</option>
-            <option value="off-duty">Off Duty</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Team</label>
           <select
             name="team_id"
@@ -455,11 +492,16 @@ const StaffManagement: React.FC = () => {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           >
             <option value="">No Team</option>
-            {teams.map(team => (
+            {filteredTeams.map(team => (
               <option key={team.id} value={team.id}>{team.name}</option>
             ))}
           </select>
-          <p className="text-xs text-gray-500 mt-1">Select a team to assign this staff member to</p>
+          <p className="text-xs text-gray-500 mt-1">
+            {formData.department 
+              ? `Team automatically selected for ${formData.department} department` 
+              : 'Team will be auto-selected when department is chosen'
+            }
+          </p>
         </div>
       </div>
       

@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Button from '../../components/base/Button';
-import Input from '../../components/base/Input';
 import useForm from '../../hooks/useForm';
 import useGeolocation from '../../hooks/useGeolocation';
 import Navbar from '../../components/Navbar';
+import { useToast } from '../../components/base/Toast';
 import { getAuthState, type UserData } from '../../utils/auth';
 import { reverseGeocode } from '../../utils/geocoding';
 import ReCAPTCHA from 'react-google-recaptcha';
 import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
+import PrivacyPolicyModal from '../../components/PrivacyPolicyModal';
+import TermsOfServiceModal from '../../components/TermsOfServiceModal';
 
 
 interface IncidentReportFormData {
@@ -27,9 +29,7 @@ interface IncidentReportFormData {
 
 export default function IncidentReportPage() {
   const navigate = useNavigate();
-  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
-  const [showErrorMessage, setShowErrorMessage] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const { showToast } = useToast();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [locationMethod, setLocationMethod] = useState<'auto' | 'manual'>('manual');
@@ -37,8 +37,7 @@ export default function IncidentReportPage() {
   const [locationSuggestions, setLocationSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
-  const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
-  const [locationName, setLocationName] = useState('Loading location...');
+  const [isReverseGeocoding] = useState(false);
 
   // New state for reCAPTCHA and terms checkbox
   const recaptchaRef = useRef<ReCAPTCHA>(null);
@@ -46,6 +45,10 @@ export default function IncidentReportPage() {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [termsError, setTermsError] = useState('');
   const [recaptchaError, setRecaptchaError] = useState('');
+
+  // State for modals
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
   // State for attachments
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -139,13 +142,14 @@ export default function IncidentReportPage() {
       try {
         const result = await reverseGeocode(13.8043, 121.2855);
         if (result.success) {
-          setLocationName(result.locationName);
+          // Location name is available but not used in current implementation
+          console.log('Location name:', result.locationName);
         } else {
-          setLocationName('Rosario, Batangas');
+          console.log('Using default location: Rosario, Batangas');
         }
       } catch (error) {
         console.error('Failed to get location name:', error);
-        setLocationName('Rosario, Batangas');
+        console.log('Using default location: Rosario, Batangas');
       }
     };
 
@@ -390,12 +394,10 @@ export default function IncidentReportPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate terms checkbox and reCAPTCHA only for guest users
+    // Validate reCAPTCHA only for guest users
     if (!isAuthenticated) {
-      if (!agreedToTerms) {
-        setTermsError('You must agree to the Terms of Service and Privacy Policy.');
-        return;
-      }
+      // Set agreedToTerms to true since we show the notice instead of checkbox
+      setAgreedToTerms(true);
 
       if (!recaptchaValue) {
         setRecaptchaError('Please complete the reCAPTCHA.');
@@ -417,9 +419,13 @@ export default function IncidentReportPage() {
         .filter(([_, field]) => field.error)
         .map(([name, field]) => `${name}: ${field.error}`)
         .join('; ');
-      setErrorMessage(errorMessages || 'Please fill in all required fields correctly.');
-      setShowErrorMessage(true);
-      setTimeout(() => setShowErrorMessage(false), 5000);
+      
+      showToast({
+        type: 'error',
+        title: 'Validation Error',
+        message: errorMessages || 'Please fill in all required fields correctly.',
+        durationMs: 5000
+      });
       return;
     }
 
@@ -427,8 +433,6 @@ export default function IncidentReportPage() {
     const endpoint = isAuthenticated ? '/api/incidents/report' : '/api/incidents/report-guest';
 
     setIsSubmitting(true);
-    setShowErrorMessage(false);
-    setShowSuccessMessage(false);
 
     try {
       const raw = getValues();
@@ -451,7 +455,7 @@ export default function IncidentReportPage() {
       }
 
       // Add attachments
-      selectedFiles.forEach((file, index) => {
+      selectedFiles.forEach((file) => {
         formData.append('attachments', file);
       });
 
@@ -486,8 +490,12 @@ export default function IncidentReportPage() {
       if (response.ok) {
         const responseData = await response.json();
         console.log('SUCCESS: Incident report saved to database:', responseData);
-        setShowSuccessMessage(true);
-        setTimeout(() => setShowSuccessMessage(false), 5000);
+        showToast({
+          type: 'success',
+          title: 'Report Submitted Successfully!',
+          message: 'Emergency responders have been notified and will respond as soon as possible.',
+          durationMs: 5000
+        });
         // Redirect to home page after successful submission
         setTimeout(() => {
           navigate('/');
@@ -497,20 +505,26 @@ export default function IncidentReportPage() {
         console.error('ERROR: Database save failed');
         console.error('Status:', response.status);
         console.error('Response data:', data);
-        setErrorMessage(
-          data.message || (data.missingFields?.length
-            ? `Missing: ${data.missingFields.join(', ')}`
-            : 'Failed to submit incident report. Please try again.')
-        );
-        setShowErrorMessage(true);
-        setTimeout(() => setShowErrorMessage(false), 5000);
+        const errorMsg = data.message || (data.missingFields?.length
+          ? `Missing: ${data.missingFields.join(', ')}`
+          : 'Failed to submit incident report. Please try again.');
+        
+        showToast({
+          type: 'error',
+          title: 'Submission Failed',
+          message: errorMsg,
+          durationMs: 5000
+        });
       }
 
     } catch (error) {
       console.error('Incident report submission failed:', error);
-      setErrorMessage('Network error. Please try again.');
-      setShowErrorMessage(true);
-      setTimeout(() => setShowErrorMessage(false), 5000);
+      showToast({
+        type: 'error',
+        title: 'Network Error',
+        message: 'Network error. Please check your connection and try again.',
+        durationMs: 5000
+      });
     } finally {
       setIsSubmitting(false);
       if (recaptchaRef.current) {
@@ -1052,35 +1066,7 @@ export default function IncidentReportPage() {
       {/* Guest Form */}
       <div className="container mx-auto px-4 pb-8">
         <div className="max-w-4xl mx-auto">
-          {/* Success Message */}
-          {showSuccessMessage && (
-            <div className="mb-6 p-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200/50 rounded-2xl shadow-lg backdrop-blur-sm">
-              <div className="flex items-center gap-3 text-green-800">
-                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                  <i className="ri-check-circle-line text-green-600"></i>
-                </div>
-                <div>
-                  <p className="font-semibold text-lg">Incident report submitted successfully!</p>
-                  <p className="text-green-600 text-sm mt-1">Emergency responders have been notified</p>
-                </div>
-              </div>
-            </div>
-          )}
 
-          {/* Error Message */}
-          {showErrorMessage && (
-            <div className="mb-6 p-6 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200/50 rounded-2xl shadow-lg backdrop-blur-sm">
-              <div className="flex items-center gap-3 text-red-800">
-                <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                  <i className="ri-error-warning-line text-red-600"></i>
-                </div>
-                <div>
-                  <p className="font-semibold text-lg">Failed to submit report</p>
-                  <p className="text-red-600 text-sm mt-1">{errorMessage}</p>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Guest Incident Report Form */}
           <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8">
@@ -1145,10 +1131,7 @@ export default function IncidentReportPage() {
                         className={`w-full pl-10 pr-4 py-4 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all ${
                           fields.guestContact.error ? 'border-red-300' : 'border-gray-300'
                         }`}
-                        inputClassName="w-full py-4 px-4 border-0 focus:ring-0 focus:outline-none bg-transparent text-gray-900 placeholder-gray-500"
-                        buttonClassName="px-3 py-4 border-r border-gray-300 bg-gray-50 hover:bg-gray-100"
-                        dropdownClassName="bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
-                        inputProps={{ required: true }}
+                        placeholder="Enter phone number"
                       />
                     </div>
                     <p className="text-gray-500 text-xs mt-1">
@@ -1164,27 +1147,27 @@ export default function IncidentReportPage() {
               {/* Include the same form sections as authenticated users */}
               {renderIncidentFormSections()}
 
-              {/* Terms of Service and Privacy Policy checkbox - Only for guest users */}
+              {/* Terms of Service and Privacy Policy notice - Only for guest users */}
               <div className="mt-6">
-                <label className="inline-flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={agreedToTerms}
-                    onChange={onTermsChange}
-                    className="form-checkbox h-5 w-5 text-red-600"
-                  />
-                  <span className="ml-2 text-gray-700 text-sm">
-                    I agree to the{' '}
-                    <a href="/terms-of-service" target="_blank" rel="noopener noreferrer" className="text-red-600 underline">
-                      Terms of Service
-                    </a>{' '}
-                    and{' '}
-                    <a href="/privacy-policy" target="_blank" rel="noopener noreferrer" className="text-red-600 underline">
-                      Privacy Policy
-                    </a>
-                    <span className="text-red-600">*</span>
-                  </span>
-                </label>
+                <p className="text-gray-700 text-sm">
+                  By submitting, you agree to our{' '}
+                  <button
+                    type="button"
+                    onClick={() => setShowTermsModal(true)}
+                    className="text-red-600 underline hover:text-red-500 bg-transparent border-none p-0 font-medium transition-colors duration-200"
+                  >
+                    terms of service
+                  </button>{' '}
+                  and{' '}
+                  <button
+                    type="button"
+                    onClick={() => setShowPrivacyModal(true)}
+                    className="text-red-600 underline hover:text-red-500 bg-transparent border-none p-0 font-medium transition-colors duration-200"
+                  >
+                    privacy policy
+                  </button>
+                  <span className="text-red-600">*</span>
+                </p>
                 {termsError && <p className="text-red-600 text-sm mt-1">{termsError}</p>}
               </div>
 
@@ -1228,6 +1211,16 @@ export default function IncidentReportPage() {
           </div>
         </div>
       </div>
+
+      {/* Modals */}
+      <TermsOfServiceModal 
+        isOpen={showTermsModal} 
+        onClose={() => setShowTermsModal(false)} 
+      />
+      <PrivacyPolicyModal 
+        isOpen={showPrivacyModal} 
+        onClose={() => setShowPrivacyModal(false)} 
+      />
       </div>
     );
 
@@ -1289,35 +1282,7 @@ export default function IncidentReportPage() {
       <div className="container mx-auto px-4 pb-8">
         <div className="max-w-4xl mx-auto">
 
-          {/* Success Message */}
-          {showSuccessMessage && (
-            <div className="mb-6 p-6 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200/50 rounded-2xl shadow-lg backdrop-blur-sm">
-              <div className="flex items-center gap-3 text-green-800">
-                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                  <i className="ri-check-circle-line text-green-600"></i>
-                </div>
-                <div>
-                  <p className="font-semibold text-lg">Incident report submitted successfully!</p>
-                  <p className="text-green-600 text-sm mt-1">Emergency responders have been notified</p>
-                </div>
-              </div>
-            </div>
-          )}
 
-          {/* Error Message */}
-          {showErrorMessage && (
-            <div className="mb-6 p-6 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200/50 rounded-2xl shadow-lg backdrop-blur-sm">
-              <div className="flex items-center gap-3 text-red-800">
-                <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                  <i className="ri-error-warning-line text-red-600"></i>
-                </div>
-                <div>
-                  <p className="font-semibold text-lg">Failed to submit report</p>
-                  <p className="text-red-600 text-sm mt-1">{errorMessage}</p>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Enhanced Incident Report Form */}
           <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8">
@@ -1361,6 +1326,16 @@ export default function IncidentReportPage() {
           </div>
         </div>
       </div>
+
+      {/* Modals */}
+      <TermsOfServiceModal 
+        isOpen={showTermsModal} 
+        onClose={() => setShowTermsModal(false)} 
+      />
+      <PrivacyPolicyModal 
+        isOpen={showPrivacyModal} 
+        onClose={() => setShowPrivacyModal(false)} 
+      />
     </div>
   );
 }

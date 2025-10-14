@@ -24,6 +24,8 @@ const SafetyProtocolsPage: React.FC = () => {
   const [selectedType, setSelectedType] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [selectedProtocol, setSelectedProtocol] = useState<SafetyProtocol | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     const authState = getAuthState();
@@ -132,7 +134,7 @@ const SafetyProtocolsPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-green-50 to-emerald-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-green-50 to-emerald-100 relative">
       <Navbar isAuthenticated={isAuthenticated} userData={userData || undefined} />
 
       {/* Enhanced Hero Section */}
@@ -402,9 +404,33 @@ const SafetyProtocolsPage: React.FC = () => {
                       <h3 className={`font-bold text-gray-900 mb-2 ${viewMode === 'list' ? 'text-xl' : 'text-lg'}`}>
                         {protocol.title}
                       </h3>
-                      <p className={`text-gray-600 mb-4 ${viewMode === 'list' ? 'text-base' : 'text-sm'} line-clamp-3`}>
-                        {protocol.description}
-                      </p>
+                      <div className="relative">
+                        <p className={`text-gray-600 mb-1 ${viewMode === 'list' ? 'text-base' : 'text-sm'} ${
+                          protocol.description.length > 150 ? 'line-clamp-3' : ''
+                        }`}>
+                          {protocol.description}
+                        </p>
+                        {protocol.description.length > 150 && (
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const target = e.currentTarget.previousElementSibling as HTMLParagraphElement;
+                              if (target.classList.contains('line-clamp-3')) {
+                                target.classList.remove('line-clamp-3');
+                                e.currentTarget.innerHTML = '<i class="ri-arrow-up-s-line mr-1"></i>See Less';
+                              } else {
+                                target.classList.add('line-clamp-3');
+                                e.currentTarget.innerHTML = '<i class="ri-arrow-down-s-line mr-1"></i>See More';
+                              }
+                            }}
+                            className="text-green-600 hover:text-green-700 text-sm font-medium flex items-center mb-4"
+                          >
+                            <i className="ri-arrow-down-s-line mr-1"></i>
+                            See More
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {viewMode === 'list' && (
@@ -424,18 +450,84 @@ const SafetyProtocolsPage: React.FC = () => {
 
                   {/* File Attachment */}
                   {protocol.file_attachment && (
-                    <a
-                      href={`http://localhost:5000/uploads/${protocol.file_attachment}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center text-green-600 hover:text-green-700 font-semibold mb-4 transition-colors group"
-                    >
-                      <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-2 group-hover:bg-green-200 transition-colors">
-                        <i className="ri-file-text-line text-sm"></i>
-                      </div>
-                      <span className="text-sm">View Attachment</span>
-                      <i className="ri-external-link-line ml-1 text-xs"></i>
-                    </a>
+                    <div className="mb-4">
+                      {viewMode === 'grid' ? (
+                        <div className="relative">
+                          {/* File Preview */}
+                          {protocol.file_attachment.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/) ? (
+                            // Image preview
+                            <div className="relative aspect-video rounded-xl overflow-hidden border border-gray-200">
+                              <img
+                                src={`http://localhost:5000/uploads/${protocol.file_attachment}`}
+                                alt={protocol.title}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          ) : protocol.file_attachment.toLowerCase().endsWith('.pdf') ? (
+                            // PDF preview with embedded viewer
+                            <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-white border border-gray-200 shadow-sm group">
+                              <div className="absolute top-0 left-0 right-0 h-12 bg-gradient-to-r from-red-600 to-red-700 flex items-center px-4 z-10">
+                                <i className="ri-file-pdf-line text-xl text-white mr-2"></i>
+                                <span className="text-white font-medium truncate">
+                                  {protocol.file_attachment.split('/').pop()}
+                                </span>
+                              </div>
+                              {/* PDF Embed Preview */}
+                              <div className="absolute inset-0 pt-12">
+                                <iframe
+                                  src={`http://localhost:5000/uploads/${protocol.file_attachment}#toolbar=0&view=FitH`}
+                                  className="w-full h-full"
+                                  title={protocol.title}
+                                />
+                              </div>
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                <div className="transform translate-y-4 group-hover:translate-y-0 transition-transform">
+                                  <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-lg text-gray-900 font-medium flex items-center space-x-2">
+                                    <i className="ri-fullscreen-line"></i>
+                                    <span>Open Full View</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            // Generic file preview
+                            <div className="relative aspect-[4/3] rounded-xl overflow-hidden bg-gray-100 border border-gray-200 flex items-center justify-center">
+                              <div className="text-center">
+                                <i className="ri-file-text-line text-4xl text-gray-400"></i>
+                                <p className="text-sm text-gray-600 mt-2">Document</p>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* View button overlay */}
+                          <a
+                            href={`http://localhost:5000/uploads/${protocol.file_attachment}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center rounded-xl group"
+                          >
+                            <span className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-lg text-gray-900 font-medium flex items-center space-x-2 transform translate-y-2 group-hover:translate-y-0 transition-transform">
+                              <i className="ri-eye-line"></i>
+                              <span>View File</span>
+                            </span>
+                          </a>
+                        </div>
+                      ) : (
+                        // List view - keep original link style
+                        <a
+                          href={`http://localhost:5000/uploads/${protocol.file_attachment}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center text-green-600 hover:text-green-700 font-semibold transition-colors group"
+                        >
+                          <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-2 group-hover:bg-green-200 transition-colors">
+                            <i className="ri-file-text-line text-sm"></i>
+                          </div>
+                          <span className="text-sm">View Attachment</span>
+                          <i className="ri-external-link-line ml-1 text-xs"></i>
+                        </a>
+                      )}
+                    </div>
                   )}
 
                   {/* Footer */}
@@ -444,17 +536,190 @@ const SafetyProtocolsPage: React.FC = () => {
                       <i className="ri-time-line mr-1"></i>
                       Updated: {new Date(protocol.updated_at).toLocaleDateString()}
                     </p>
-                    {viewMode === 'list' && (
-                      <button className="text-green-600 hover:text-green-700 text-sm font-medium flex items-center space-x-1 transition-colors">
-                        <span>View Details</span>
-                        <i className="ri-arrow-right-line"></i>
-                      </button>
-                    )}
+                    <button 
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setSelectedProtocol(protocol);
+                        setIsModalOpen(true);
+                      }}
+                      className={`text-green-600 hover:text-green-700 text-sm font-medium flex items-center space-x-1 transition-colors ${
+                        viewMode === 'grid' ? 'mt-2' : ''
+                      }`}
+                    >
+                      <span>View Details</span>
+                      <i className="ri-arrow-right-line"></i>
+                    </button>
                   </div>
                 </div>
               </div>
             ))}
           </div>
+        )}
+
+        {/* Details Modal */}
+        {isModalOpen && selectedProtocol && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
+              {/* Modal Header */}
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                    selectedProtocol.type === 'fire' ? 'bg-gradient-to-r from-red-500 to-red-600' :
+                    selectedProtocol.type === 'earthquake' ? 'bg-gradient-to-r from-yellow-500 to-orange-600' :
+                    selectedProtocol.type === 'medical' ? 'bg-gradient-to-r from-blue-500 to-blue-600' :
+                    selectedProtocol.type === 'intrusion' ? 'bg-gradient-to-r from-purple-500 to-purple-600' :
+                    'bg-gradient-to-r from-green-500 to-green-600'
+                  }`}>
+                    <i className={`text-2xl text-white ${
+                      selectedProtocol.type === 'fire' ? 'ri-fire-line' :
+                      selectedProtocol.type === 'earthquake' ? 'ri-earthquake-line' :
+                      selectedProtocol.type === 'medical' ? 'ri-heart-pulse-line' :
+                      selectedProtocol.type === 'intrusion' ? 'ri-shield-keyhole-line' :
+                      'ri-alert-line'
+                    }`}></i>
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-gray-900">{selectedProtocol.title}</h3>
+                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 ${
+                      selectedProtocol.type === 'fire' ? 'bg-red-100 text-red-800' :
+                      selectedProtocol.type === 'earthquake' ? 'bg-yellow-100 text-yellow-800' :
+                      selectedProtocol.type === 'medical' ? 'bg-blue-100 text-blue-800' :
+                      selectedProtocol.type === 'intrusion' ? 'bg-purple-100 text-purple-800' :
+                      'bg-green-100 text-green-800'
+                    }`}>
+                      {selectedProtocol.type.charAt(0).toUpperCase() + selectedProtocol.type.slice(1)}
+                    </span>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsModalOpen(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <i className="ri-close-line text-2xl"></i>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
+              <div className="prose prose-green max-w-none">
+                <p className="text-gray-600 whitespace-pre-wrap">{selectedProtocol.description}</p>
+              </div>
+
+              {/* File Attachment */}
+              {selectedProtocol.file_attachment && (
+                <div className="mt-8">
+                  <h4 className="font-semibold text-gray-900 mb-4">Attached Document</h4>
+                  {selectedProtocol.file_attachment.toLowerCase().endsWith('.pdf') ? (
+                    // PDF Preview
+                    <div className="border border-gray-200 rounded-xl overflow-hidden">
+                      <div className="bg-gray-50 border-b border-gray-200 p-4 flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <i className="ri-file-pdf-line text-red-500"></i>
+                          <span className="font-medium text-gray-900">{selectedProtocol.file_attachment.split('/').pop()}</span>
+                        </div>
+                        <a
+                          href={`http://localhost:5000/uploads/${selectedProtocol.file_attachment}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1"
+                        >
+                          <i className="ri-download-line"></i>
+                          <span>Download PDF</span>
+                        </a>
+                      </div>
+                      <div className="h-[500px] bg-gray-50">
+                        <iframe
+                          src={`http://localhost:5000/uploads/${selectedProtocol.file_attachment}#toolbar=0`}
+                          className="w-full h-full"
+                          title={selectedProtocol.title}
+                        />
+                      </div>
+                    </div>
+                  ) : selectedProtocol.file_attachment.toLowerCase().match(/\.(jpg|jpeg|png|gif|webp)$/) ? (
+                    // Image Preview
+                    <div className="border border-gray-200 rounded-xl overflow-hidden">
+                      <div className="bg-gray-50 border-b border-gray-200 p-4 flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <i className="ri-image-line text-blue-500"></i>
+                          <span className="font-medium text-gray-900">{selectedProtocol.file_attachment.split('/').pop()}</span>
+                        </div>
+                        <a
+                          href={`http://localhost:5000/uploads/${selectedProtocol.file_attachment}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1"
+                        >
+                          <i className="ri-download-line"></i>
+                          <span>Download Image</span>
+                        </a>
+                      </div>
+                      <div className="relative aspect-video">
+                        <img
+                          src={`http://localhost:5000/uploads/${selectedProtocol.file_attachment}`}
+                          alt={selectedProtocol.title}
+                          className="w-full h-full object-contain bg-gray-50"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    // Other file types
+                    <div className="border border-gray-200 rounded-xl overflow-hidden">
+                      <div className="bg-gray-50 p-4 flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <i className="ri-file-text-line text-gray-500"></i>
+                          <span className="font-medium text-gray-900">{selectedProtocol.file_attachment.split('/').pop()}</span>
+                        </div>
+                        <a
+                          href={`http://localhost:5000/uploads/${selectedProtocol.file_attachment}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="bg-gray-100 text-gray-600 hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1"
+                        >
+                          <i className="ri-download-line"></i>
+                          <span>Download File</span>
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Metadata */}
+              <div className="mt-8 pt-6 border-t border-gray-200">
+                <h4 className="font-semibold text-gray-900 mb-4">Additional Information</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Created</p>
+                    <p className="font-medium text-gray-900">
+                      {new Date(selectedProtocol.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Last Updated</p>
+                    <p className="font-medium text-gray-900">
+                      {new Date(selectedProtocol.updated_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-gray-200 bg-gray-50">
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
         )}
       </div>
     </div>

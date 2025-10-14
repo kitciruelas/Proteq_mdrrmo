@@ -1,8 +1,7 @@
-import React from 'react';
-
 interface AvatarProps {
   name?: string;
   email?: string;
+  profilePicture?: string;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   className?: string;
   showBadge?: boolean;
@@ -14,6 +13,7 @@ interface AvatarProps {
 export default function Avatar({
   name,
   email,
+  profilePicture,
   size = 'md',
   className = '',
   showBadge = false,
@@ -70,8 +70,30 @@ export default function Avatar({
     return 'U';
   };
 
-  const baseClasses = `bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg text-white font-bold relative`;
+  const baseClasses = `bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg text-white font-bold relative overflow-hidden`;
   const clickableClass = onClick ? 'cursor-pointer hover:shadow-xl transition-shadow duration-200' : '';
+
+  // Build the full URL for the profile picture
+  const getProfilePictureUrl = () => {
+    if (!profilePicture) return null;
+    
+    // If it's already a full URL, return as is
+    if (profilePicture.startsWith('http')) {
+      return profilePicture;
+    }
+    
+    // If it starts with /uploads, it's a relative path from the backend
+    if (profilePicture.startsWith('/uploads')) {
+      // Get the backend URL from environment or use localhost
+      const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+      return `${backendUrl}${profilePicture}`;
+    }
+    
+    // Otherwise, assume it's a relative path
+    return profilePicture;
+  };
+
+  const profilePictureUrl = getProfilePictureUrl();
 
   return (
     <div className="relative inline-block">
@@ -79,7 +101,19 @@ export default function Avatar({
         className={`${baseClasses} ${sizeClasses[size]} ${clickableClass} ${className}`}
         onClick={onClick}
       >
-        {getInitials()}
+        {profilePictureUrl ? (
+          <img
+            src={profilePictureUrl}
+            alt={name || email || 'Profile'}
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              // If image fails to load, hide the img and show initials
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+        ) : (
+          getInitials()
+        )}
       </div>
       
       {showBadge && (

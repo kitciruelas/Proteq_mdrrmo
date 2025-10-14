@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../config/conn');
 const { sendIncidentAssignmentEmail, sendStaffAssignmentEmail } = require('../services/emailService');
 const { authenticateUser, authenticateAdmin, authenticateStaff } = require('../middleware/authMiddleware');
+const NotificationService = require('../services/notificationService');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
@@ -475,12 +476,17 @@ router.get('/', async (req, res) => {
         CASE 
           WHEN ir.reported_by IS NULL THEN 'guest'
           ELSE 'user'
-        END as reporter_type
+        END as reporter_type,
+        GROUP_CONCAT(DISTINCT ita.team_id) as assigned_team_ids,
+        GROUP_CONCAT(DISTINCT t2.name SEPARATOR ', ') as all_assigned_teams
       FROM incident_reports ir
       LEFT JOIN teams t ON ir.assigned_team_id = t.id
       LEFT JOIN staff s ON ir.assigned_staff_id = s.id
       LEFT JOIN general_users gu ON ir.reported_by = gu.user_id
       LEFT JOIN incident_report_guests irg ON ir.incident_id = irg.incident_id
+      LEFT JOIN incident_team_assignments ita ON ir.incident_id = ita.incident_id AND ita.status = 'active'
+      LEFT JOIN teams t2 ON ita.team_id = t2.id
+      GROUP BY ir.incident_id
       ORDER BY ir.date_reported DESC
     `);
 
@@ -517,13 +523,18 @@ router.get('/:id', async (req, res) => {
         CASE 
           WHEN ir.reported_by IS NULL THEN 'guest'
           ELSE 'user'
-        END as reporter_type
+        END as reporter_type,
+        GROUP_CONCAT(DISTINCT ita.team_id) as assigned_team_ids,
+        GROUP_CONCAT(DISTINCT t2.name SEPARATOR ', ') as all_assigned_teams
       FROM incident_reports ir
       LEFT JOIN teams t ON ir.assigned_team_id = t.id
       LEFT JOIN staff s ON ir.assigned_staff_id = s.id
       LEFT JOIN general_users gu ON ir.reported_by = gu.user_id
       LEFT JOIN incident_report_guests irg ON ir.incident_id = irg.incident_id
+      LEFT JOIN incident_team_assignments ita ON ir.incident_id = ita.incident_id AND ita.status = 'active'
+      LEFT JOIN teams t2 ON ita.team_id = t2.id
       WHERE ir.incident_id = ?
+      GROUP BY ir.incident_id
     `, [id]);
 
     if (incidents.length === 0) {
@@ -636,6 +647,55 @@ router.put('/:id/validate', authenticateAdmin, async (req, res) => {
       } catch (logError) {
         console.error('❌ Failed to log validation update activity:', logError.message);
       }
+
+      // Create notification for the user who reported the incident
+      try {
+        console.log('🔔 Creating notification for incident validation...');
+        
+        // Get the incident details for notification
+        const [incidentDetails] = await pool.execute(`
+          SELECT 
+            ir.incident_id,
+            ir.incident_type,
+            ir.description,
+            ir.priority_level,
+            ir.reported_by,
+            CONCAT(gu.first_name, ' ', gu.last_name) as reporter_name,
+            gu.email as reporter_email
+          FROM incident_reports ir
+          LEFT JOIN general_users gu ON ir.reported_by = gu.user_id
+          WHERE ir.incident_id = ?
+        `, [id]);
+
+        if (incidentDetails.length > 0) {
+          const incident = incidentDetails[0];
+          
+          // Only create notification if the incident was reported by a registered user
+          if (incident.reported_by) {
+            const incidentData = {
+              incident_id: incident.incident_id,
+              incident_type: incident.incident_type,
+              description: incident.description,
+              priority_level: incident.priority_level,
+              reporter_name: incident.reporter_name,
+              reporter_email: incident.reporter_email
+            };
+
+            const notificationId = await NotificationService.createIncidentValidationNotification(
+              incidentData,
+              validationStatus,
+              incident.reported_by
+            );
+
+            console.log(`✅ Notification created for user ${incident.reported_by}:`, notificationId);
+          } else {
+            console.log('ℹ️ No notification created - incident was reported by guest user');
+          }
+        }
+      } catch (notificationError) {
+        console.error('❌ Failed to create validation notification:', notificationError.message);
+        // Don't fail the validation if notification creation fails
+      }
     }
 
     // Fetch the updated incident data
@@ -668,7 +728,569 @@ router.put('/:id/validate', authenticateAdmin, async (req, res) => {
   }
 });
 
-// PUT - Assign team to incident
+// PUT - Assign multiple teams to incident (with authentication)
+router.put('/:id/assign-teams', authenticateAdmin, async (req, res) => {
+  try {
+    console.log('🚀 STARTING assign-teams endpoint');
+    console.log('🚀 Request params:', req.params);
+    console.log('🚀 Request body:', req.body);
+    
+    const { id } = req.params;
+    const { teamIds } = req.body; // Array of team IDs
+
+    console.log('🔄 Assigning multiple teams to incident:', { incidentId: id, teamIds });
+
+    // Check if incident exists
+    console.log('🔍 Checking if incident exists:', id);
+    const [incidents] = await pool.execute(
+      'SELECT * FROM incident_reports WHERE incident_id = ?',
+      [id]
+    );
+    console.log('🔍 Incident query result:', incidents.length, 'incidents found');
+
+    if (incidents.length === 0) {
+      console.log('❌ Incident not found:', id);
+      return res.status(404).json({
+        success: false,
+        message: 'Incident not found'
+      });
+    }
+
+    const incident = incidents[0];
+    console.log('✅ Incident found:', incident.incident_id);
+
+    // If teamIds is empty or null, clear all assignments
+    if (!teamIds || teamIds.length === 0) {
+      console.log('🗑️ Clearing all team assignments for incident:', id);
+      
+      try {
+        // Try to clear from incident_team_assignments table (if it exists)
+        await pool.execute(
+          'DELETE FROM incident_team_assignments WHERE incident_id = ?',
+          [id]
+        );
+      } catch (tableError) {
+        console.log('⚠️ incident_team_assignments table does not exist yet, skipping...');
+      }
+      
+      // Clear from incident_reports table for backward compatibility
+      await pool.execute(
+        'UPDATE incident_reports SET assigned_team_id = NULL, assigned_staff_id = NULL, updated_at = NOW() WHERE incident_id = ?',
+        [id]
+      );
+
+      return res.json({
+        success: true,
+        message: 'All team assignments cleared successfully',
+        emailSent: false
+      });
+    }
+
+    // Validate all teams exist and have members
+    console.log('🔍 Validating teams:', teamIds);
+    const teamIdsStr = teamIds.join(',');
+    console.log('🔍 Team IDs string:', teamIdsStr);
+    
+    const [teams] = await pool.execute(
+      `SELECT t.id, t.name, t.description, 
+              COUNT(s.id) as member_count
+       FROM teams t
+       LEFT JOIN staff s ON t.id = s.assigned_team_id AND (s.status = "active" OR s.status = 1) AND s.availability = 'available'
+       WHERE t.id IN (${teamIdsStr})
+       GROUP BY t.id, t.name, t.description`,
+      []
+    );
+    console.log('🔍 Teams query result:', teams.length, 'teams found');
+
+    if (teams.length !== teamIds.length) {
+      console.log('❌ Some teams not found');
+      return res.status(400).json({
+        success: false,
+        message: 'One or more teams not found'
+      });
+    }
+
+    // Check for teams with no members
+    const teamsWithNoMembers = teams.filter(team => team.member_count === 0);
+    if (teamsWithNoMembers.length > 0) {
+      console.log('❌ Cannot assign teams with no active members:', teamsWithNoMembers.map(t => t.name));
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot assign teams with no active members. Please add members to the teams first.',
+        teamsWithNoMembers: teamsWithNoMembers.map(t => t.name)
+      });
+    }
+
+    // Check if incident_team_assignments table exists
+    console.log('🔍 Checking if incident_team_assignments table exists...');
+    let useNewTable = true;
+    try {
+      await pool.execute('SELECT 1 FROM incident_team_assignments LIMIT 1');
+      console.log('✅ incident_team_assignments table exists, using new method');
+    } catch (tableError) {
+      console.log('⚠️ incident_team_assignments table does not exist, using fallback method');
+      console.log('⚠️ Table error:', tableError.message);
+      useNewTable = false;
+    }
+
+    if (useNewTable) {
+      // Use new many-to-many table
+      const connection = await pool.getConnection();
+      
+      try {
+        // Start transaction
+        await connection.beginTransaction();
+
+        // Clear existing team assignments
+        await connection.execute(
+          'DELETE FROM incident_team_assignments WHERE incident_id = ?',
+          [id]
+        );
+
+        // Add new team assignments
+        const assignmentPromises = teamIds.map(teamId => {
+          return connection.execute(
+            'INSERT INTO incident_team_assignments (incident_id, team_id, assigned_by, assigned_at) VALUES (?, ?, ?, NOW())',
+            [id, teamId, req.admin?.admin_id || req.user?.id || null]
+          );
+        });
+
+        await Promise.all(assignmentPromises);
+
+        // Update incident_reports for backward compatibility (use first team as primary)
+        await connection.execute(
+          'UPDATE incident_reports SET assigned_team_id = ?, assigned_staff_id = NULL, updated_at = NOW() WHERE incident_id = ?',
+          [teamIds[0], id]
+        );
+
+        // Commit transaction
+        await connection.commit();
+
+        console.log('✅ Multiple teams assigned successfully using new table');
+      } catch (error) {
+        // Rollback transaction
+        await connection.rollback();
+        throw error;
+      } finally {
+        // Release connection
+        connection.release();
+      }
+    } else {
+      // Fallback: Use only the first team for backward compatibility
+      console.log('⚠️ Using fallback method - assigning only first team');
+      console.log('🔍 Updating incident_reports with team ID:', teamIds[0], 'for incident:', id);
+      
+      try {
+        // First check if assigned_team_id column exists
+        console.log('🔍 Checking if assigned_team_id column exists...');
+        const [columns] = await pool.execute(
+          "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'incident_reports' AND COLUMN_NAME = 'assigned_team_id'"
+        );
+        
+        if (columns.length === 0) {
+          console.log('⚠️ assigned_team_id column does not exist, skipping database update');
+          console.log('⚠️ Please run the migration to add the required columns');
+        } else {
+          console.log('✅ assigned_team_id column exists, proceeding with update');
+          await pool.execute(
+            'UPDATE incident_reports SET assigned_team_id = ?, assigned_staff_id = NULL, updated_at = NOW() WHERE incident_id = ?',
+            [teamIds[0], id]
+          );
+          console.log('✅ Fallback team assignment completed');
+        }
+      } catch (updateError) {
+        console.error('❌ Error in fallback team assignment:', updateError);
+        console.error('❌ Update error details:', {
+          message: updateError.message,
+          code: updateError.code,
+          errno: updateError.errno,
+          sqlState: updateError.sqlState
+        });
+        throw updateError;
+      }
+    }
+
+    // Log team assignment activity
+    try {
+      const { created_by } = req.body;
+      const finalCreatedBy = created_by !== null && created_by !== undefined
+        ? created_by
+        : (req.admin?.admin_id || req.user?.id || null);
+
+      const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip || 'unknown';
+      const teamNames = teams.map(t => t.name).join(', ');
+
+      await pool.execute(`
+        INSERT INTO activity_logs (admin_id, action, details, ip_address, created_at)
+        VALUES (?, 'incident_assign_multiple_teams', ?, ?, NOW())
+      `, [finalCreatedBy, `Incident #${id} assigned to teams: ${teamNames}`, clientIP]);
+      console.log('✅ Activity logged: incident_assign_multiple_teams');
+    } catch (logError) {
+      console.error('❌ Failed to log team assignment activity:', logError.message);
+    }
+
+    // Prepare incident data for email
+    const incidentData = {
+      id: incident.incident_id,
+      type: incident.incident_type,
+      description: incident.description,
+      location: extractLocationFromDescription(incident.description),
+      priorityLevel: incident.priority_level,
+      dateReported: incident.date_reported
+    };
+
+    // Check email configuration before attempting to send emails
+    const smtpUser = process.env.EMAIL_USER || process.env.SMTP_USER;
+    const smtpPass = process.env.EMAIL_PASS || process.env.SMTP_PASS;
+    
+    if (!smtpUser || !smtpPass) {
+      console.log('⚠️ SMTP credentials not configured, skipping email notifications');
+      return res.json({
+        success: true,
+        message: `${teams.length} teams assigned to incident successfully (emails skipped - SMTP not configured)`,
+        emailSent: false,
+        emailDetails: {
+          totalTeams: teams.length,
+          totalEmailsSent: 0,
+          totalEmailsFailed: 0,
+          teamDetails: teams.map(team => ({
+            teamName: team.name,
+            totalMembers: team.member_count,
+            emailsSent: 0,
+            emailsFailed: 0,
+            error: 'SMTP not configured'
+          }))
+        }
+      });
+    }
+
+    // Send email notifications to all teams
+    let totalEmailsSent = 0;
+    let totalEmailsFailed = 0;
+    let allEmailDetails = [];
+
+    for (const team of teams) {
+      try {
+        console.log(`📧 Sending email notifications to team: ${team.name} (ID: ${team.id})`);
+        console.log(`📧 Incident data:`, JSON.stringify(incidentData, null, 2));
+        
+        const emailResult = await sendIncidentAssignmentEmail(incidentData, team.id);
+        console.log(`📧 Email result for team ${team.name}:`, JSON.stringify(emailResult, null, 2));
+        
+        if (emailResult && emailResult.success) {
+          totalEmailsSent += emailResult.emailsSent || 0;
+          totalEmailsFailed += emailResult.emailsFailed || 0;
+          allEmailDetails.push({
+            teamName: team.name,
+            totalMembers: emailResult.totalMembers || team.member_count,
+            emailsSent: emailResult.emailsSent || 0,
+            emailsFailed: emailResult.emailsFailed || 0,
+            failedEmails: emailResult.failedEmails || []
+          });
+          console.log(`✅ Email notifications sent successfully to team ${team.name}`);
+        } else {
+          console.log(`⚠️ Email sending failed for team ${team.name}:`, emailResult?.error || 'Unknown error');
+          totalEmailsFailed += team.member_count;
+          allEmailDetails.push({
+            teamName: team.name,
+            totalMembers: team.member_count,
+            emailsSent: 0,
+            emailsFailed: team.member_count,
+            error: emailResult?.error || 'Unknown error'
+          });
+        }
+      } catch (emailError) {
+        console.error(`❌ Error sending email to team ${team.name}:`, emailError);
+        console.error(`❌ Error stack:`, emailError.stack);
+        totalEmailsFailed += team.member_count;
+        allEmailDetails.push({
+          teamName: team.name,
+          totalMembers: team.member_count,
+          emailsSent: 0,
+          emailsFailed: team.member_count,
+          error: emailError.message
+        });
+      }
+    }
+
+    // Determine if database was updated
+    const dbUpdated = useNewTable || (await pool.execute(
+      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'incident_reports' AND COLUMN_NAME = 'assigned_team_id'"
+    )).length > 0;
+
+    res.json({
+      success: true,
+      message: dbUpdated 
+        ? `${teams.length} teams assigned to incident successfully`
+        : `${teams.length} teams assigned to incident successfully (database update skipped - migration needed)`,
+      emailSent: totalEmailsSent > 0,
+      emailDetails: {
+        totalTeams: teams.length,
+        totalEmailsSent,
+        totalEmailsFailed,
+        teamDetails: allEmailDetails
+      },
+      databaseUpdated: dbUpdated
+    });
+
+  } catch (error) {
+    console.error('❌ Error assigning multiple teams to incident:', error);
+    console.error('❌ Error stack:', error.stack);
+    console.error('❌ Error details:', {
+      message: error.message,
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to assign teams to incident',
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? {
+        stack: error.stack,
+        code: error.code,
+        errno: error.errno
+      } : undefined
+    });
+  }
+});
+
+// PUT - Assign multiple teams to incident (NO AUTH - for testing)
+router.put('/:id/assign-teams-no-auth', async (req, res) => {
+  try {
+    console.log('🚀 STARTING assign-teams-no-auth endpoint');
+    console.log('🚀 Request params:', req.params);
+    console.log('🚀 Request body:', req.body);
+    
+    const { id } = req.params;
+    const { teamIds } = req.body; // Array of team IDs
+
+    console.log('🔄 Assigning multiple teams to incident:', { incidentId: id, teamIds });
+
+    // Check if incident exists
+    console.log('🔍 Checking if incident exists:', id);
+    const [incidents] = await pool.execute(
+      'SELECT * FROM incident_reports WHERE incident_id = ?',
+      [id]
+    );
+    console.log('🔍 Incident query result:', incidents.length, 'incidents found');
+
+    if (incidents.length === 0) {
+      console.log('❌ Incident not found:', id);
+      return res.status(404).json({
+        success: false,
+        message: 'Incident not found'
+      });
+    }
+
+    const incident = incidents[0];
+    console.log('✅ Incident found:', incident.incident_id);
+
+    // If teamIds is empty or null, clear all assignments
+    if (!teamIds || teamIds.length === 0) {
+      console.log('🗑️ Clearing all team assignments for incident:', id);
+      
+      try {
+        // Try to clear from incident_team_assignments table (if it exists)
+        await pool.execute(
+          'DELETE FROM incident_team_assignments WHERE incident_id = ?',
+          [id]
+        );
+      } catch (tableError) {
+        console.log('⚠️ incident_team_assignments table does not exist yet, skipping...');
+      }
+      
+      // Clear from incident_reports table for backward compatibility
+      await pool.execute(
+        'UPDATE incident_reports SET assigned_team_id = NULL, assigned_staff_id = NULL, updated_at = NOW() WHERE incident_id = ?',
+        [id]
+      );
+
+      return res.json({
+        success: true,
+        message: 'All team assignments cleared successfully',
+        emailSent: false
+      });
+    }
+
+    // Validate all teams exist and have members
+    console.log('🔍 Validating teams:', teamIds);
+    const teamIdsStr = teamIds.join(',');
+    console.log('🔍 Team IDs string:', teamIdsStr);
+    
+    const [teams] = await pool.execute(
+      `SELECT t.id, t.name, t.description, 
+              COUNT(s.id) as member_count
+       FROM teams t
+       LEFT JOIN staff s ON t.id = s.assigned_team_id AND (s.status = "active" OR s.status = 1) AND s.availability = 'available'
+       WHERE t.id IN (${teamIdsStr})
+       GROUP BY t.id, t.name, t.description`,
+      []
+    );
+    console.log('🔍 Teams query result:', teams.length, 'teams found');
+
+    if (teams.length !== teamIds.length) {
+      console.log('❌ Some teams not found');
+      return res.status(400).json({
+        success: false,
+        message: 'One or more teams not found'
+      });
+    }
+
+    // Check for teams with no members
+    const teamsWithNoMembers = teams.filter(team => team.member_count === 0);
+    if (teamsWithNoMembers.length > 0) {
+      console.log('❌ Cannot assign teams with no active members:', teamsWithNoMembers.map(t => t.name));
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot assign teams with no active members. Please add members to the teams first.',
+        teamsWithNoMembers: teamsWithNoMembers.map(t => t.name)
+      });
+    }
+
+    // Check if incident_team_assignments table exists
+    console.log('🔍 Checking if incident_team_assignments table exists...');
+    let useNewTable = true;
+    try {
+      await pool.execute('SELECT 1 FROM incident_team_assignments LIMIT 1');
+      console.log('✅ incident_team_assignments table exists, using new method');
+    } catch (tableError) {
+      console.log('⚠️ incident_team_assignments table does not exist, using fallback method');
+      console.log('⚠️ Table error:', tableError.message);
+      useNewTable = false;
+    }
+
+    if (useNewTable) {
+      // Use new many-to-many table
+      const connection = await pool.getConnection();
+      
+      try {
+        // Start transaction
+        await connection.beginTransaction();
+
+        // Clear existing team assignments
+        await connection.execute(
+          'DELETE FROM incident_team_assignments WHERE incident_id = ?',
+          [id]
+        );
+
+        // Add new team assignments
+        const assignmentPromises = teamIds.map(teamId => {
+          return connection.execute(
+            'INSERT INTO incident_team_assignments (incident_id, team_id, assigned_by, assigned_at) VALUES (?, ?, ?, NOW())',
+            [id, teamId, null] // No assigned_by for no-auth version
+          );
+        });
+
+        await Promise.all(assignmentPromises);
+
+        // Update incident_reports for backward compatibility (use first team as primary)
+        await connection.execute(
+          'UPDATE incident_reports SET assigned_team_id = ?, assigned_staff_id = NULL, updated_at = NOW() WHERE incident_id = ?',
+          [teamIds[0], id]
+        );
+
+        // Commit transaction
+        await connection.commit();
+
+        console.log('✅ Multiple teams assigned successfully using new table');
+      } catch (error) {
+        // Rollback transaction
+        await connection.rollback();
+        throw error;
+      } finally {
+        // Release connection
+        connection.release();
+      }
+    } else {
+      // Fallback: Use only the first team for backward compatibility
+      console.log('⚠️ Using fallback method - assigning only first team');
+      console.log('🔍 Updating incident_reports with team ID:', teamIds[0], 'for incident:', id);
+      
+      try {
+        // First check if assigned_team_id column exists
+        console.log('🔍 Checking if assigned_team_id column exists...');
+        const [columns] = await pool.execute(
+          "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'incident_reports' AND COLUMN_NAME = 'assigned_team_id'"
+        );
+        
+        if (columns.length === 0) {
+          console.log('⚠️ assigned_team_id column does not exist, skipping database update');
+          console.log('⚠️ Please run the migration to add the required columns');
+        } else {
+          console.log('✅ assigned_team_id column exists, proceeding with update');
+          await pool.execute(
+            'UPDATE incident_reports SET assigned_team_id = ?, assigned_staff_id = NULL, updated_at = NOW() WHERE incident_id = ?',
+            [teamIds[0], id]
+          );
+          console.log('✅ Fallback team assignment completed');
+        }
+      } catch (updateError) {
+        console.error('❌ Error in fallback team assignment:', updateError);
+        console.error('❌ Update error details:', {
+          message: updateError.message,
+          code: updateError.code,
+          errno: updateError.errno,
+          sqlState: updateError.sqlState
+        });
+        throw updateError;
+      }
+    }
+
+    // Skip email notifications for no-auth version
+    console.log('⚠️ Skipping email notifications (no-auth version)');
+
+    // Determine if database was updated
+    const dbUpdated = useNewTable || (await pool.execute(
+      "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'incident_reports' AND COLUMN_NAME = 'assigned_team_id'"
+    )).length > 0;
+
+    res.json({
+      success: true,
+      message: dbUpdated 
+        ? `${teams.length} teams assigned to incident successfully`
+        : `${teams.length} teams assigned to incident successfully (database update skipped - migration needed)`,
+      emailSent: false,
+      emailDetails: {
+        totalTeams: teams.length,
+        totalEmailsSent: 0,
+        totalEmailsFailed: 0,
+        teamDetails: teams.map(team => ({
+          teamName: team.name,
+          totalMembers: team.member_count,
+          emailsSent: 0,
+          emailsFailed: 0,
+          error: 'Skipped (no-auth version)'
+        }))
+      },
+      databaseUpdated: dbUpdated
+    });
+
+  } catch (error) {
+    console.error('❌ Error assigning multiple teams to incident:', error);
+    console.error('❌ Error stack:', error.stack);
+    console.error('❌ Error details:', {
+      message: error.message,
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState,
+      sqlMessage: error.sqlMessage
+    });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to assign teams to incident',
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? {
+        stack: error.stack,
+        code: error.code,
+        errno: error.errno
+      } : undefined
+    });
+  }
+});
+
+// PUT - Assign team to incident (legacy single team assignment)
 router.put('/:id/assign-team', authenticateAdmin, async (req, res) => {
   try {
     const { id } = req.params;
@@ -696,6 +1318,14 @@ router.put('/:id/assign-team', authenticateAdmin, async (req, res) => {
     // If teamId is null, clear assignment
     if (teamId === null) {
       console.log('🗑️ Clearing team assignment for incident:', id);
+      
+      // Clear from incident_team_assignments table
+      await pool.execute(
+        'DELETE FROM incident_team_assignments WHERE incident_id = ?',
+        [id]
+      );
+      
+      // Clear from incident_reports table
       await pool.execute(
         'UPDATE incident_reports SET assigned_team_id = NULL, assigned_staff_id = NULL, updated_at = NOW() WHERE incident_id = ?',
         [id]
@@ -745,90 +1375,115 @@ router.put('/:id/assign-team', authenticateAdmin, async (req, res) => {
       });
     }
 
-    // Update incident with team assignment
-    await pool.execute(
-      'UPDATE incident_reports SET assigned_team_id = ?, assigned_staff_id = NULL, updated_at = NOW() WHERE incident_id = ?',
-      [teamId, id]
-    );
-
-    console.log('✅ Incident updated with team assignment');
-
-    // Log team assignment activity
-    try {
-      const { created_by } = req.body;
-      const finalCreatedBy = created_by !== null && created_by !== undefined
-        ? created_by
-        : (req.admin?.admin_id || req.user?.id || null);
-
-      console.log('Final created_by value to be inserted:', finalCreatedBy);
-
-      const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip || 'unknown';
-
-      await pool.execute(`
-        INSERT INTO activity_logs (admin_id, action, details, ip_address, created_at)
-        VALUES (?, 'incident_assign_team', ?, ?, NOW())
-      `, [finalCreatedBy, `Incident #${id} assigned to team "${team.name}" (${teamMembers.length} members)`, clientIP]);
-      console.log('✅ Activity logged: incident_assign_team');
-    } catch (logError) {
-      console.error('❌ Failed to log team assignment activity:', logError.message);
-    }
-
-    // Prepare incident data for email
-    const incidentData = {
-      id: incident.incident_id,
-      type: incident.incident_type,
-      description: incident.description,
-      location: extractLocationFromDescription(incident.description),
-      priorityLevel: incident.priority_level,
-      dateReported: incident.date_reported
-    };
-
-    // Send email notification
-    let emailSent = false;
-    let emailDetails = null;
+    // Start transaction
+    await pool.execute('START TRANSACTION');
 
     try {
-      console.log('📧 Sending email notifications to team members...');
-      const emailResult = await sendIncidentAssignmentEmail(incidentData, teamId);
-      
-      if (emailResult && emailResult.success) {
-        emailSent = true;
-        emailDetails = {
-          teamName: team.name,
-          totalMembers: emailResult.totalMembers || teamMembers.length,
-          emailsSent: emailResult.emailsSent || 0,
-          emailsFailed: emailResult.emailsFailed || 0,
-          failedEmails: emailResult.failedEmails || []
-        };
-        console.log(`✅ Email notifications sent: ${emailResult.emailsSent}/${emailResult.totalMembers} successful`);
-      } else {
-        console.log('⚠️ Email sending failed or returned false');
-        emailDetails = {
+      // Clear existing team assignments
+      await pool.execute(
+        'DELETE FROM incident_team_assignments WHERE incident_id = ?',
+        [id]
+      );
+
+      // Add new team assignment
+      await pool.execute(
+        'INSERT INTO incident_team_assignments (incident_id, team_id, assigned_by, assigned_at) VALUES (?, ?, ?, NOW())',
+        [id, teamId, req.admin?.admin_id || req.user?.id || null]
+      );
+
+      // Update incident with team assignment
+      await pool.execute(
+        'UPDATE incident_reports SET assigned_team_id = ?, assigned_staff_id = NULL, updated_at = NOW() WHERE incident_id = ?',
+        [teamId, id]
+      );
+
+      // Commit transaction
+      await pool.execute('COMMIT');
+
+      console.log('✅ Incident updated with team assignment');
+
+      // Log team assignment activity
+      try {
+        const { created_by } = req.body;
+        const finalCreatedBy = created_by !== null && created_by !== undefined
+          ? created_by
+          : (req.admin?.admin_id || req.user?.id || null);
+
+        console.log('Final created_by value to be inserted:', finalCreatedBy);
+
+        const clientIP = req.headers['x-forwarded-for'] || req.connection.remoteAddress || req.ip || 'unknown';
+
+        await pool.execute(`
+          INSERT INTO activity_logs (admin_id, action, details, ip_address, created_at)
+          VALUES (?, 'incident_assign_team', ?, ?, NOW())
+        `, [finalCreatedBy, `Incident #${id} assigned to team "${team.name}" (${teamMembers.length} members)`, clientIP]);
+        console.log('✅ Activity logged: incident_assign_team');
+      } catch (logError) {
+        console.error('❌ Failed to log team assignment activity:', logError.message);
+      }
+
+      // Prepare incident data for email
+      const incidentData = {
+        id: incident.incident_id,
+        type: incident.incident_type,
+        description: incident.description,
+        location: extractLocationFromDescription(incident.description),
+        priorityLevel: incident.priority_level,
+        dateReported: incident.date_reported
+      };
+
+      // Send email notification
+      let emailSent = false;
+      let emailDetails = null;
+
+      try {
+        console.log('📧 Sending email notifications to team members...');
+        const emailResult = await sendIncidentAssignmentEmail(incidentData, teamId);
+        
+        if (emailResult && emailResult.success) {
+          emailSent = true;
+          emailDetails = {
+            teamName: team.name,
+            totalMembers: emailResult.totalMembers || teamMembers.length,
+            emailsSent: emailResult.emailsSent || 0,
+            emailsFailed: emailResult.emailsFailed || 0,
+            failedEmails: emailResult.failedEmails || []
+          };
+          console.log(`✅ Email notifications sent: ${emailResult.emailsSent}/${emailResult.totalMembers} successful`);
+        } else {
+          console.log('⚠️ Email sending failed or returned false');
+          emailDetails = {
+            teamName: team.name,
+            totalMembers: teamMembers.length,
+            emailsSent: 0,
+            emailsFailed: teamMembers.length,
+            error: emailResult?.error || 'Unknown error'
+          };
+        }
+      } catch (emailError) {
+        console.error('❌ Error sending email notification:', emailError);
+        emailSent = false;
+        emailDetails = { 
           teamName: team.name,
           totalMembers: teamMembers.length,
           emailsSent: 0,
           emailsFailed: teamMembers.length,
-          error: emailResult?.error || 'Unknown error'
+          error: emailError.message 
         };
       }
-    } catch (emailError) {
-      console.error('❌ Error sending email notification:', emailError);
-      emailSent = false;
-      emailDetails = { 
-        teamName: team.name,
-        totalMembers: teamMembers.length,
-        emailsSent: 0,
-        emailsFailed: teamMembers.length,
-        error: emailError.message 
-      };
-    }
 
-    res.json({
-      success: true,
-      message: 'Team assigned to incident successfully',
-      emailSent,
-      emailDetails
-    });
+      res.json({
+        success: true,
+        message: 'Team assigned to incident successfully',
+        emailSent,
+        emailDetails
+      });
+
+    } catch (error) {
+      // Rollback transaction
+      await pool.execute('ROLLBACK');
+      throw error;
+    }
 
   } catch (error) {
     console.error('❌ Error assigning team to incident:', error);
@@ -1063,6 +1718,58 @@ router.put('/:id/update-status', authenticateStaff, async (req, res) => {
       } catch (logError) {
         console.error('❌ Failed to log status update activity:', logError.message);
       }
+
+      // Create notification for the user who reported the incident (if status is resolved/closed)
+      if (status === 'resolved' || status === 'closed') {
+        try {
+          console.log('🔔 Creating notification for incident status update...');
+          
+          // Get the incident details for notification
+          const [incidentDetails] = await pool.execute(`
+            SELECT 
+              ir.incident_id,
+              ir.incident_type,
+              ir.description,
+              ir.priority_level,
+              ir.reported_by,
+              CONCAT(gu.first_name, ' ', gu.last_name) as reporter_name,
+              gu.email as reporter_email
+            FROM incident_reports ir
+            LEFT JOIN general_users gu ON ir.reported_by = gu.user_id
+            WHERE ir.incident_id = ?
+          `, [id]);
+
+          if (incidentDetails.length > 0) {
+            const incidentData = incidentDetails[0];
+            
+            // Only create notification if the incident was reported by a registered user
+            if (incidentData.reported_by) {
+              const incidentDataForNotification = {
+                incident_id: incidentData.incident_id,
+                incident_type: incidentData.incident_type,
+                description: incidentData.description,
+                priority_level: incidentData.priority_level,
+                reporter_name: incidentData.reporter_name,
+                reporter_email: incidentData.reporter_email
+              };
+
+              // Create notification for status update
+              const notificationId = await NotificationService.createIncidentStatusNotification(
+                incidentDataForNotification,
+                status,
+                incidentData.reported_by
+              );
+
+              console.log(`✅ Status notification created for user ${incidentData.reported_by}:`, notificationId);
+            } else {
+              console.log('ℹ️ No status notification created - incident was reported by guest user');
+            }
+          }
+        } catch (notificationError) {
+          console.error('❌ Failed to create status notification:', notificationError.message);
+          // Don't fail the status update if notification creation fails
+        }
+      }
     }
 
     console.log('✅ Incident status updated successfully');
@@ -1103,6 +1810,87 @@ router.post('/test', (req, res) => {
     message: 'Incident route test successful',
     receivedData: req.body
   });
+});
+
+// Test endpoint for assign-teams
+router.put('/test-assign-teams', (req, res) => {
+  console.log('🧪 TEST ASSIGN-TEAMS ENDPOINT HIT');
+  console.log('Request body:', req.body);
+  res.json({
+    success: true,
+    message: 'Assign teams test endpoint working',
+    receivedData: req.body
+  });
+});
+
+// Test authentication endpoint
+router.put('/test-auth', authenticateAdmin, (req, res) => {
+  console.log('🧪 TEST AUTH ENDPOINT HIT');
+  res.json({
+    success: true,
+    message: 'Authentication test successful',
+    admin: req.admin
+  });
+});
+
+// Test endpoint without authentication to debug the issue
+router.put('/debug-assign-teams/:id', async (req, res) => {
+  try {
+    console.log('🐛 DEBUG assign-teams endpoint');
+    console.log('🐛 Request params:', req.params);
+    console.log('🐛 Request body:', req.body);
+    
+    const { id } = req.params;
+    const { teamIds } = req.body;
+    
+    console.log('🐛 Processing:', { incidentId: id, teamIds });
+    
+    // Test database connection
+    console.log('🐛 Testing database connection...');
+    try {
+      const [testResult] = await pool.execute('SELECT 1 as test');
+      console.log('🐛 Database connection successful:', testResult);
+    } catch (dbError) {
+      console.error('🐛 Database connection failed:', dbError);
+      return res.status(500).json({
+        success: false,
+        message: 'Database connection failed',
+        error: dbError.message
+      });
+    }
+    
+    // Test incident query
+    console.log('🐛 Testing incident query...');
+    try {
+      const [incidents] = await pool.execute(
+        'SELECT * FROM incident_reports WHERE incident_id = ?',
+        [id]
+      );
+      console.log('🐛 Incident query result:', incidents.length, 'incidents found');
+    } catch (queryError) {
+      console.error('🐛 Incident query failed:', queryError);
+      return res.status(500).json({
+        success: false,
+        message: 'Incident query failed',
+        error: queryError.message
+      });
+    }
+    
+    // Simple test - just return success
+    res.json({
+      success: true,
+      message: 'Debug endpoint working',
+      data: { incidentId: id, teamIds }
+    });
+    
+  } catch (error) {
+    console.error('🐛 Debug endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Debug endpoint error',
+      error: error.message
+    });
+  }
 });
 
 // Get incidents reported by a specific user

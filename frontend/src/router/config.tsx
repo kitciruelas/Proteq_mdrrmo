@@ -16,6 +16,8 @@ import FeedbackPage from "../pages/feedback/page";
 import WelfareCheckPage from "../pages/welfare-check/page";
 import NotificationsPage from "../pages/notifications/page";
 import StaffFeedbackPage from "../pages/staff/stafffeedback/page";
+import SiteMapPage from "../pages/sitemap/page";
+import AboutPage from "../pages/about/page";
 
 // Admin Components
 import AdminLayout from "../components/AdminLayout";
@@ -104,6 +106,14 @@ const routes: RouteObject[] = [
   {
     path: "/notifications",
     element: <NotificationsPage />,
+  },
+  {
+    path: "/sitemap",
+    element: <SiteMapPage />,
+  },
+  {
+    path: "/about",
+    element: <AboutPage />,
   },
   // Admin Auth Routes (separate from admin layout)
   {

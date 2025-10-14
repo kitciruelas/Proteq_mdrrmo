@@ -1,3 +1,6 @@
+// Import apiRequest from utils
+import { apiRequest } from '../utils/api';
+
 // Notification types
 export interface Notification {
   id: number;
@@ -68,6 +71,3 @@ export const notificationsApi = {
     });
   },
 };
-
-// Import apiRequest from utils
-import { apiRequest } from '../utils/api';

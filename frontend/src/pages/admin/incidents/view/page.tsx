@@ -24,6 +24,8 @@ interface Incident {
   assignedTeamName?: string;
   assignedStaffId?: number | null;
   assignedStaffName?: string;
+  assignedTeamIds?: string; // New field for multiple team IDs
+  allAssignedTeams?: string; // New field for all assigned team names
   attachment?: string; // Added attachment field for filenames
   dateReported: string;
   dateResolved?: string;
@@ -110,8 +112,9 @@ const ViewIncidents: React.FC = () => {
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [showIncidentModal, setShowIncidentModal] = useState(false);
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
-  const [assignmentType, setAssignmentType] = useState<'team' | 'staff'>('team');
+  const [assignmentType, setAssignmentType] = useState<'team' | 'teams' | 'staff'>('team');
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
+  const [selectedTeamIds, setSelectedTeamIds] = useState<number[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null);
   const [emailStatus, setEmailStatus] = useState<{sent: boolean, details?: any} | null>(null);
   const [isAssigning, setIsAssigning] = useState(false);
@@ -130,6 +133,16 @@ const ViewIncidents: React.FC = () => {
     if (assignmentType === 'staff') {
       if (selectedIncident.status === 'pending') return true;
       return !selectedStaffId;
+    }
+    
+    if (assignmentType === 'teams') {
+      if (selectedTeamIds.length === 0) return false; // Allow clearing all assignments
+      // Check if any selected team has no members
+      const teamsWithNoMembers = selectedTeamIds.filter(teamId => {
+        const team = teams.find(t => t.id === teamId);
+        return team?.member_count === 0;
+      });
+      return teamsWithNoMembers.length > 0;
     }
     
     if (assignmentType === 'team') {
@@ -197,6 +210,8 @@ const ViewIncidents: React.FC = () => {
           assignedTeamName: row.assigned_team_name || undefined,
           assignedStaffId: row.assigned_staff_id ? Number(row.assigned_staff_id) : undefined,
           assignedStaffName: row.assigned_staff_name || undefined,
+          assignedTeamIds: row.assigned_team_ids || undefined, // New field for multiple team IDs
+          allAssignedTeams: row.all_assigned_teams || undefined, // New field for all assigned team names
           attachment: row.attachment || undefined, // Added attachment field
           dateReported,
           dateResolved: undefined,
@@ -305,6 +320,76 @@ const ViewIncidents: React.FC = () => {
           details: {
             error: 'Cannot assign team with no active members. Please add members to the team first.',
             teamName: 'Selected Team'
+          }
+        });
+      } else {
+        setEmailStatus({
+          sent: false,
+          details: { error: error instanceof Error ? error.message : 'Unknown error' }
+        });
+      }
+    } finally {
+      setIsAssigning(false);
+    }
+  };
+
+  const handleAssignMultipleTeams = async (incidentId: number, teamIds: number[]) => {
+    try {
+      setIsAssigning(true);
+      setEmailStatus(null);
+
+      const response = await incidentsApi.assignTeamsToIncident(incidentId, teamIds);
+
+      // Update local state
+      setIncidents(prev => prev.map(incident => {
+        if (incident.id === incidentId) {
+          const selectedTeams = teams.filter(t => teamIds.includes(t.id));
+          return {
+            ...incident,
+            assignedTeamIds: teamIds.join(','),
+            allAssignedTeams: selectedTeams.map(t => t.name).join(', '),
+            assignedTeamId: teamIds[0] || undefined, // Keep first team as primary for backward compatibility
+            assignedTeamName: selectedTeams[0]?.name || undefined,
+            assignedStaffId: undefined, // Clear staff assignment when teams are assigned
+            assignedStaffName: undefined
+          };
+        }
+        return incident;
+      }));
+
+      // Show email status
+      if (response?.emailSent) {
+        setEmailStatus({
+          sent: true,
+          details: response.emailDetails
+        });
+        // Show success toast
+        const selectedTeams = teams.filter(t => teamIds.includes(t.id));
+        showToast({ 
+          type: 'success', 
+          message: `${selectedTeams.length} teams assigned successfully!` 
+        });
+      } else {
+        setEmailStatus({
+          sent: false,
+          details: response.emailDetails || { error: 'No email details provided' }
+        });
+      }
+
+      setTimeout(() => {
+        closeAssignmentModal();
+      }, 2000);
+
+    } catch (error) {
+      console.error('Error assigning multiple teams to incident:', error);
+
+      // Check if it's a backend validation error
+      if (error instanceof Error && error.message.includes('Cannot assign teams with no active members')) {
+        setEmailStatus({
+          sent: false,
+          details: {
+            error: 'Cannot assign teams with no active members. Please add members to the teams first.',
+            teamNames: 'Selected Teams'
           }
         });
       } else {
@@ -463,7 +548,7 @@ const ViewIncidents: React.FC = () => {
     }
   };
 
-  const openAssignmentModal = (incident: Incident, type: 'team' | 'staff') => {
+  const openAssignmentModal = (incident: Incident, type: 'team' | 'teams' | 'staff') => {
     // Prevent staff assignment for pending incidents
     if (type === 'staff' && incident.status === 'pending') {
       return;
@@ -471,7 +556,19 @@ const ViewIncidents: React.FC = () => {
     
     setSelectedIncident(incident);
     setAssignmentType(type);
-    setSelectedTeamId(incident.assignedTeamId || null);
+    
+    if (type === 'teams') {
+      // Parse existing team IDs from the incident
+      const existingTeamIds = incident.assignedTeamIds 
+        ? incident.assignedTeamIds.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id))
+        : [];
+      setSelectedTeamIds(existingTeamIds);
+      setSelectedTeamId(null);
+    } else {
+      setSelectedTeamId(incident.assignedTeamId || null);
+      setSelectedTeamIds([]);
+    }
+    
     setSelectedStaffId(incident.assignedStaffId || null);
     setEmailStatus(null); // Reset email status
     setShowAssignmentModal(true);
@@ -482,6 +579,7 @@ const ViewIncidents: React.FC = () => {
     setSelectedIncident(null);
     setAssignmentType('team');
     setSelectedTeamId(null);
+    setSelectedTeamIds([]);
     setSelectedStaffId(null);
     setEmailStatus(null);
     setIsAssigning(false);
@@ -803,7 +901,21 @@ const ViewIncidents: React.FC = () => {
                       <i className="ri-time-line mr-1"></i>
                       {new Date(incident.dateReported).toLocaleString()}
                     </span>
-                    {incident.assignedTeamName && (
+                    {incident.allAssignedTeams && (
+                      <span className="text-green-600">
+                        <i className="ri-team-line mr-1"></i>
+                        Teams: {incident.allAssignedTeams}
+                        {(() => {
+                          const teamIds = incident.assignedTeamIds ? incident.assignedTeamIds.split(',').map(id => parseInt(id.trim())) : [];
+                          const totalMembers = teamIds.reduce((total, teamId) => {
+                            const team = teams.find(t => t.id === teamId);
+                            return total + (team?.member_count || 0);
+                          }, 0);
+                          return totalMembers > 0 ? ` (${totalMembers} total members)` : '';
+                        })()}
+                      </span>
+                    )}
+                    {incident.assignedTeamName && !incident.allAssignedTeams && (
                       <span className="text-green-600">
                         <i className="ri-team-line mr-1"></i>
                         Team: {incident.assignedTeamName}
@@ -867,21 +979,24 @@ const ViewIncidents: React.FC = () => {
                       : 'Validate'
                     }
                   </button>
-                  {/* Only show team assignment button if incident is validated */}
+                  {/* Only show team assignment buttons if incident is validated */}
                   {incident.validationStatus === 'validated' && (
-                    <button
-                      onClick={() => openAssignmentModal(incident, 'team')}
-                      className="px-3 py-1 bg-green-100 text-green-700 text-sm rounded-lg hover:bg-green-200 transition-colors relative group"
-                      title="Assign Team - All team members will receive email notifications"
-                    >
-                      <i className="ri-team-line mr-1"></i>
-                      Assign Team
-                      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                        <i className="ri-mail-line mr-1"></i>
-                        All members notified
-                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800"></div>
-                      </div>
-                    </button>
+                    <>
+                 
+                      <button
+                        onClick={() => openAssignmentModal(incident, 'teams')}
+                        className="px-3 py-1 bg-blue-100 text-blue-700 text-sm rounded-lg hover:bg-blue-200 transition-colors relative group"
+                        title="Assign Multiple Teams - All team members will receive email notifications"
+                      >
+                        <i className="ri-team-fill mr-1"></i>
+                        Assign Teams
+                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                          <i className="ri-mail-line mr-1"></i>
+                          Multiple teams support
+                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800"></div>
+                        </div>
+                      </button>
+                    </>
                   )}
 
                 </div>
@@ -963,9 +1078,11 @@ const ViewIncidents: React.FC = () => {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Assigned Team</label>
+                  <label className="block text-sm font-medium text-gray-700">Assigned Teams</label>
                   <p className="text-sm text-gray-900">
-                    {selectedIncident.assignedTeamName ? (
+                    {selectedIncident.allAssignedTeams ? (
+                      <span className="text-green-600">{selectedIncident.allAssignedTeams}</span>
+                    ) : selectedIncident.assignedTeamName ? (
                       <span className="text-green-600">{selectedIncident.assignedTeamName}</span>
                     ) : (
                       'Not assigned'
@@ -977,7 +1094,7 @@ const ViewIncidents: React.FC = () => {
               <div className="border-t border-gray-200 pt-4">
                 <h4 className="text-sm font-medium text-gray-700 mb-3">Team Information</h4>
                 <div className="space-y-3">
-                    {selectedIncident.assignedStaffName ? (
+                  {selectedIncident.assignedStaffName ? (
                     (() => {
                       const assignedStaff = staff.find(s => s.id === selectedIncident.assignedStaffId);
                       if (assignedStaff && assignedStaff.team_id) {
@@ -1011,10 +1128,10 @@ const ViewIncidents: React.FC = () => {
                                 <div>
                                   <span className="text-gray-600 text-sm">Team:</span>
                                   <span className="ml-2 font-medium text-purple-700">{team.name}</span>
-                </div>
+                                </div>
                               )}
                               {teamMembers.length > 0 && (
-                <div>
+                                <div>
                                   <span className="text-gray-600 text-sm">Active Team Members ({teamMembers.length}):</span>
                                   <div className="mt-1 space-y-1">
                                     {teamMembers.map(member => (
@@ -1065,6 +1182,55 @@ const ViewIncidents: React.FC = () => {
                         </div>
                       );
                     })()
+                  ) : selectedIncident.allAssignedTeams ? (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div className="flex items-center mb-2">
+                        <i className="ri-team-fill text-blue-600 mr-2"></i>
+                        <span className="font-medium text-blue-800">Multiple Team Assignment</span>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <span className="text-gray-600 text-sm">Assigned Teams:</span>
+                          <span className="ml-2 font-medium text-blue-700">{selectedIncident.allAssignedTeams}</span>
+                        </div>
+                        {(() => {
+                          const teamIds = selectedIncident.assignedTeamIds ? selectedIncident.assignedTeamIds.split(',').map(id => parseInt(id.trim())) : [];
+                          const totalMembers = teamIds.reduce((total, teamId) => {
+                            const team = teams.find(t => t.id === teamId);
+                            return total + (team?.member_count || 0);
+                          }, 0);
+                          
+                          return (
+                            <>
+                              <div>
+                                <span className="text-gray-600 text-sm">Total Teams:</span>
+                                <span className="ml-2 font-medium text-blue-700">{teamIds.length}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-600 text-sm">Total Members:</span>
+                                <span className="ml-2 font-medium text-blue-700">{totalMembers}</span>
+                              </div>
+                              <div className="space-y-2">
+                                <span className="text-gray-600 text-sm">Team Details:</span>
+                                {teamIds.map(teamId => {
+                                  const team = teams.find(t => t.id === teamId);
+                                  const teamMembers = team ? staff.filter(s => s.team_id === teamId) : [];
+                                  return team ? (
+                                    <div key={teamId} className="ml-4 p-2 bg-white rounded border border-blue-100">
+                                      <div className="font-medium text-blue-800">{team.name}</div>
+                                      <div className="text-xs text-blue-600">{team.description || 'No description'}</div>
+                                      <div className="text-xs text-blue-600 mt-1">
+                                        {teamMembers.length} active members
+                                      </div>
+                                    </div>
+                                  ) : null;
+                                })}
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
                   ) : selectedIncident.assignedTeamName ? (
                     <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                       <div className="flex items-center mb-2">
@@ -1122,8 +1288,6 @@ const ViewIncidents: React.FC = () => {
                       </div>
                     </div>
                   )}
-                  
-                  
                 </div>
               </div>
               {/* Attachments Section */}
@@ -1190,12 +1354,12 @@ const ViewIncidents: React.FC = () => {
           onClick={closeAssignmentModal}
         >
           <div 
-            className="bg-white rounded-xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+            className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-6 border-b border-gray-200 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">
-                Assign {assignmentType === 'team' ? 'Team' : 'Staff'} to Incident #{selectedIncident.id}
+                Assign {assignmentType === 'team' ? 'Team' : assignmentType === 'teams' ? 'Teams' : 'Staff'} to Incident #{selectedIncident.id}
               </h3>
               <button
                 onClick={closeAssignmentModal}
@@ -1208,18 +1372,7 @@ const ViewIncidents: React.FC = () => {
             <div className="p-6 space-y-4">
               {assignmentType === 'team' ? (
                 <div>
-                  {/* Warning for teams with no members */}
-                  {teams.some(team => team.member_count === 0) && (
-                    <div className="mb-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                      <div className="flex items-center">
-                        <i className="ri-alert-line text-yellow-600 mr-2"></i>
-                        <span className="text-sm font-medium text-yellow-800">Teams with No Members</span>
-                      </div>
-                      <p className="text-sm text-yellow-700 mt-1">
-                        Some teams have no active members. These teams are disabled and cannot be assigned to incidents.
-                      </p>
-                    </div>
-                  )}
+             
                   
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Select Team
@@ -1294,15 +1447,181 @@ const ViewIncidents: React.FC = () => {
                     </div>
                   )}
                   
-                  <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                    <div className="flex items-center">
-                      <i className="ri-mail-line text-green-600 mr-2"></i>
-                      <span className="text-sm font-medium text-green-800">Email Notifications</span>
+                  <div className="mt-4 p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
+                    <div className="flex items-start">
+                      <div className="flex-shrink-0">
+                        <i className="ri-mail-send-line text-green-600 text-lg"></i>
+                      </div>
+                      <div className="ml-3">
+                        <h4 className="text-sm font-semibold text-green-800 mb-2">
+                          Automatic Email Notifications
+                        </h4>
+                        <div className="space-y-2 text-sm text-green-700">
+                          <div className="flex items-center">
+                            <i className="ri-check-line text-green-600 mr-2"></i>
+                            <span>All active team members receive detailed incident information</span>
+                          </div>
+                          <div className="flex items-center">
+                            <i className="ri-check-line text-green-600 mr-2"></i>
+                            <span>Email includes incident type, location, priority level, and description</span>
+                          </div>
+                          <div className="flex items-center">
+                            <i className="ri-check-line text-green-600 mr-2"></i>
+                            <span>Direct link to incident dashboard for immediate response</span>
+                          </div>
+                        </div>
+                        <div className="mt-3 p-2 bg-green-100 rounded border border-green-200">
+                          <div className="text-xs text-green-600">
+                            <i className="ri-information-line mr-1"></i>
+                            <strong>Note:</strong> Only teams with active members will receive notifications. Teams with no members are automatically excluded.
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-sm text-green-700 mt-1">
-                      When a team is assigned, all active team members will automatically receive detailed email notifications with incident information.
-                    </p>
                   </div>
+                </div>
+              ) : assignmentType === 'teams' ? (
+                <div>
+                 
+                  
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Select Teams (Multiple Selection)
+                    </label>
+                    {selectedTeamIds.length > 0 && (
+                      <button
+                        onClick={() => setSelectedTeamIds([])}
+                        className="text-sm text-red-600 hover:text-red-800 flex items-center"
+                      >
+                        <i className="ri-close-line mr-1"></i>
+                        Clear All
+                      </button>
+                    )}
+                  </div>
+                  
+                  {/* Quick select all teams with members */}
+                  {teams.filter(team => team.member_count > 0).length > 0 && (
+                    <div className="mb-3">
+                      <button
+                        onClick={() => {
+                          const teamsWithMembers = teams.filter(team => team.member_count > 0).map(t => t.id);
+                          setSelectedTeamIds(teamsWithMembers);
+                        }}
+                        className="text-sm text-blue-600 hover:text-blue-800 flex items-center"
+                      >
+                        <i className="ri-checkbox-multiple-line mr-1"></i>
+                        Select All Teams with Members
+                      </button>
+                    </div>
+                  )}
+                  
+                  <div className="max-h-60 overflow-y-auto border border-gray-300 rounded-lg">
+                    {teams
+                      .filter(team => team.member_count > 0) // Only show teams with members
+                      .map((team) => (
+                        <div key={team.id} className="flex items-center p-3 hover:bg-gray-50 border-b border-gray-200 last:border-b-0 transition-colors">
+                          <input
+                            type="checkbox"
+                            id={`team-${team.id}`}
+                            checked={selectedTeamIds.includes(team.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedTeamIds([...selectedTeamIds, team.id]);
+                              } else {
+                                setSelectedTeamIds(selectedTeamIds.filter(id => id !== team.id));
+                              }
+                            }}
+                            className="mr-3 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <label htmlFor={`team-${team.id}`} className="flex-1 cursor-pointer">
+                            <div className="font-medium text-gray-900 flex items-center">
+                              {team.name}
+                              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {team.member_count} member{team.member_count !== 1 ? 's' : ''}
+                              </span>
+                            </div>
+                            <div className="text-sm text-gray-600 mt-1">
+                              {team.description || 'No description available'}
+                            </div>
+                          </label>
+                        </div>
+                      ))}
+                    {teams.filter(team => team.member_count === 0).length > 0 && (
+                      <div className="p-3 bg-gray-50 border-t border-gray-200">
+                        <div className="text-sm font-medium text-gray-700 mb-2">Teams with no members (disabled)</div>
+                        {teams
+                          .filter(team => team.member_count === 0)
+                          .map((team) => (
+                            <div key={team.id} className="flex items-center p-2 text-gray-400">
+                              <input
+                                type="checkbox"
+                                disabled
+                                className="mr-3 h-4 w-4"
+                              />
+                              <div className="flex-1">
+                                <div className="font-medium">{team.name}</div>
+                                <div className="text-xs">0 members - Add members first</div>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Show selected teams summary */}
+                  {selectedTeamIds.length > 0 && (
+                    <div className="mt-3 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center">
+                          <i className="ri-team-fill text-blue-600 mr-2"></i>
+                          <span className="font-medium text-blue-800">Selected Teams ({selectedTeamIds.length})</span>
+                        </div>
+                        <div className="text-sm text-blue-600 font-medium">
+                          {selectedTeamIds.reduce((total, teamId) => {
+                            const team = teams.find(t => t.id === teamId);
+                            return total + (team?.member_count || 0);
+                          }, 0)} total members
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        {selectedTeamIds.map(teamId => {
+                          const team = teams.find(t => t.id === teamId);
+                          return team ? (
+                            <div key={teamId} className="flex items-center justify-between p-2 bg-white rounded border border-blue-100">
+                              <div className="flex items-center">
+                                <i className="ri-team-line text-blue-500 mr-2"></i>
+                                <span className="text-sm font-medium text-blue-800">{team.name}</span>
+                                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                                  {team.member_count} member{team.member_count !== 1 ? 's' : ''}
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => setSelectedTeamIds(selectedTeamIds.filter(id => id !== teamId))}
+                                className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-50 transition-colors"
+                                title="Remove team"
+                              >
+                                <i className="ri-close-line text-sm"></i>
+                              </button>
+                            </div>
+                          ) : null;
+                        })}
+                        <div className="mt-3 p-2 bg-blue-100 rounded border border-blue-200">
+                          <div className="flex items-center text-xs text-blue-700">
+                            <i className="ri-mail-line mr-1"></i>
+                            <span className="font-medium">Email Notifications:</span>
+                            <span className="ml-1">
+                              All {selectedTeamIds.reduce((total, teamId) => {
+                                const team = teams.find(t => t.id === teamId);
+                                return total + (team?.member_count || 0);
+                              }, 0)} team members will receive incident assignment notifications
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                 
                 </div>
               ) : selectedIncident.status === 'pending' ? (
                 <div className="p-4 bg-red-50 rounded-lg border border-red-200">
@@ -1428,65 +1747,129 @@ const ViewIncidents: React.FC = () => {
                 </div>
               )}
               
-              <div className="flex justify-end space-x-3">
-                <button
-                  onClick={closeAssignmentModal}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-                  disabled={isAssigning}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    if (!selectedIncident) return;
-                    
-                    if (assignmentType === 'team') {
-                      // Check if team has members before assigning
-                      const selectedTeam = teams.find(t => t.id === selectedTeamId);
-                      if (selectedTeam && selectedTeam.member_count === 0) {
-                        showToast({ 
-                          type: 'error', 
-                          message: 'Cannot assign team with no members. Please add members to the team first.' 
-                        });
-                        return;
-                      }
-                      handleAssignTeam(selectedIncident.id, selectedTeamId);
-                    } else {
-                      handleAssignStaff(selectedIncident.id, selectedStaffId);
-                    }
-                  }}
-                  disabled={isAssignmentButtonDisabled()}
-                  className={`px-4 py-2 rounded-lg transition-colors flex items-center ${
-                    isAssignmentButtonDisabled()
-                      ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                  }`}
-                  title={
-                    isAssignmentButtonDisabled() 
-                      ? assignmentType === 'staff' && selectedIncident?.status === 'pending'
-                        ? 'Staff assignment not available for pending incidents'
-                        : assignmentType === 'team' && selectedTeamId && teams.find(t => t.id === selectedTeamId)?.member_count === 0
-                        ? 'Cannot assign team with no members'
-                        : 'Please select a team or staff member'
-                      : assignmentType === 'team' 
-                        ? (selectedTeamId ? 'Assign selected team' : 'Unassign team')
-                        : 'Assign selected staff member'
-                  }
-                >
-                  {isAssigning ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Assigning...
-                    </>
-                  ) : (
-                    <>
-                      {assignmentType === 'team' 
-                        ? (selectedTeamId ? 'Assign Team' : 'Unassign Team')
-                        : 'Assign Staff'
-                      }
-                    </>
+              <div className="flex justify-between items-center pt-4 border-t border-gray-200">
+                <div className="text-sm text-gray-500">
+                  {assignmentType === 'teams' && selectedTeamIds.length > 0 && (
+                    <div className="flex items-center">
+                      <i className="ri-information-line mr-1"></i>
+                      <span>
+                        {selectedTeamIds.length} team{selectedTeamIds.length !== 1 ? 's' : ''} selected • 
+                        {selectedTeamIds.reduce((total, teamId) => {
+                          const team = teams.find(t => t.id === teamId);
+                          return total + (team?.member_count || 0);
+                        }, 0)} total members
+                      </span>
+                    </div>
                   )}
-                </button>
+                </div>
+                <div className="flex space-x-3">
+                  <button
+                    onClick={closeAssignmentModal}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center"
+                    disabled={isAssigning}
+                  >
+                    <i className="ri-close-line mr-1"></i>
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!selectedIncident) return;
+                      
+                      if (assignmentType === 'team') {
+                        // Check if team has members before assigning
+                        const selectedTeam = teams.find(t => t.id === selectedTeamId);
+                        if (selectedTeam && selectedTeam.member_count === 0) {
+                          showToast({ 
+                            type: 'error', 
+                            message: 'Cannot assign team with no members. Please add members to the team first.' 
+                          });
+                          return;
+                        }
+                        handleAssignTeam(selectedIncident.id, selectedTeamId);
+                      } else if (assignmentType === 'teams') {
+                        // Check if any selected team has no members
+                        const teamsWithNoMembers = selectedTeamIds.filter(teamId => {
+                          const team = teams.find(t => t.id === teamId);
+                          return team?.member_count === 0;
+                        });
+                        if (teamsWithNoMembers.length > 0) {
+                          showToast({ 
+                            type: 'error', 
+                            message: 'Cannot assign teams with no members. Please add members to the teams first.' 
+                          });
+                          return;
+                        }
+                        handleAssignMultipleTeams(selectedIncident.id, selectedTeamIds);
+                      } else {
+                        handleAssignStaff(selectedIncident.id, selectedStaffId);
+                      }
+                    }}
+                    disabled={isAssignmentButtonDisabled()}
+                    className={`px-6 py-2 rounded-lg transition-colors flex items-center font-medium ${
+                      isAssignmentButtonDisabled()
+                        ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                        : assignmentType === 'teams' && selectedTeamIds.length === 0
+                        ? 'bg-orange-600 text-white hover:bg-orange-700'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                    title={
+                      isAssignmentButtonDisabled() 
+                        ? assignmentType === 'staff' && selectedIncident?.status === 'pending'
+                          ? 'Staff assignment not available for pending incidents'
+                          : assignmentType === 'teams' && selectedTeamIds.some(teamId => teams.find(t => t.id === teamId)?.member_count === 0)
+                          ? 'Cannot assign teams with no members'
+                          : assignmentType === 'team' && selectedTeamId && teams.find(t => t.id === selectedTeamId)?.member_count === 0
+                          ? 'Cannot assign team with no members'
+                          : 'Please select a team or staff member'
+                        : assignmentType === 'team' 
+                          ? (selectedTeamId ? 'Assign selected team' : 'Unassign team')
+                          : assignmentType === 'teams'
+                          ? (selectedTeamIds.length > 0 ? `Assign ${selectedTeamIds.length} teams` : 'Clear all team assignments')
+                          : 'Assign selected staff member'
+                    }
+                  >
+                    {isAssigning ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Assigning...
+                      </>
+                    ) : (
+                      <>
+                        {assignmentType === 'team' 
+                          ? (selectedTeamId ? (
+                              <>
+                                <i className="ri-team-line mr-1"></i>
+                                Assign Team
+                              </>
+                            ) : (
+                              <>
+                                <i className="ri-team-line mr-1"></i>
+                                Unassign Team
+                              </>
+                            ))
+                          : assignmentType === 'teams'
+                          ? (selectedTeamIds.length > 0 ? (
+                              <>
+                                <i className="ri-team-fill mr-1"></i>
+                                Assign Teams ({selectedTeamIds.length})
+                              </>
+                            ) : (
+                              <>
+                                <i className="ri-delete-bin-line mr-1"></i>
+                                Clear All Teams
+                              </>
+                            ))
+                          : (
+                              <>
+                                <i className="ri-user-line mr-1"></i>
+                                Assign Staff
+                              </>
+                            )
+                        }
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

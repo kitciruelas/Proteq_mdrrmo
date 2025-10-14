@@ -641,126 +641,235 @@ async function sendAlertEmail(alertId, alertData) {
     // Prepare email content with all alert information
     const emailSubject = `[${type.toUpperCase()}] ${title}`;
     const emailHtml = `
-      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f3f4f6; border-radius: 18px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); overflow: hidden;">
-        <div style="background: linear-gradient(135deg, ${getAlertColor(type)} 0%, ${getAlertColor(type)}99 100%); color: white; padding: 36px 28px; text-align: center;">
-          <div style="position: relative; z-index: 1;">
-            <div style="display: inline-flex; align-items: center; gap: 10px; background-color: rgba(255,255,255,0.18); padding: 10px 20px; border-radius: 24px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 18px;">
-              <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20">
+      <div style="font-family: 'Inter', 'Segoe UI', Arial, sans-serif; max-width: 650px; margin: 0 auto; background: #ffffff; border-radius: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); overflow: hidden;">
+        <div style="background: linear-gradient(135deg, ${getAlertColor(type)} 0%, ${getAlertColor(type)}ee 100%); color: white; padding: 42px 32px; text-align: center; position: relative;">
+          <div style="position: relative; z-index: 2;">
+            <div style="display: inline-flex; align-items: center; gap: 12px; background-color: rgba(255,255,255,0.22); backdrop-filter: blur(8px); padding: 12px 24px; border-radius: 32px; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+              <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));">
                 <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
               </svg>
               ${type.toUpperCase()} ALERT
             </div>
-            <h1 style="margin: 0; font-size: 30px; font-weight: 800; margin-bottom: 10px; text-shadow: 0 2px 6px rgba(0,0,0,0.08);">${title}</h1>
-            <p style="margin: 0; font-size: 15px; opacity: 0.92; font-weight: 600; letter-spacing: 0.5px;">Alert ID: ${alertId}</p>
+            <h1 style="margin: 0; font-size: 36px; font-weight: 800; margin-bottom: 14px; text-shadow: 0 4px 8px rgba(0,0,0,0.12); line-height: 1.3;">${title}</h1>
+            <p style="margin: 0; font-size: 16px; opacity: 0.95; font-weight: 600; letter-spacing: 0.6px; text-shadow: 0 2px 4px rgba(0,0,0,0.08);">Alert ID: ${alertId}</p>
           </div>
+          <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: radial-gradient(circle at top right, rgba(255,255,255,0.12) 0%, transparent 60%); z-index: 1;"></div>
         </div>
-        <div style="padding: 36px 28px; background-color: #f8fafc;">
-          <div style="background-color: white; border-radius: 14px; padding: 28px; margin-bottom: 28px; border: 1px solid #e5e7eb; box-shadow: 0 2px 8px rgba(0,0,0,0.07);">
-            <h2 style="color: #1f2937; margin-top: 0; font-size: 22px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 10px;">
-              <svg width="22" height="22" fill="currentColor" viewBox="0 0 20 20">
+        <div style="padding: 42px 32px; background-color: #f8fafc;">
+          <div style="background-color: white; border-radius: 18px; padding: 32px; margin-bottom: 32px; border: 1px solid #e5e7eb; box-shadow: 0 4px 16px rgba(0,0,0,0.06); transition: all 0.3s ease;">
+            <h2 style="color: #1f2937; margin-top: 0; font-size: 24px; font-weight: 700; margin-bottom: 18px; display: flex; align-items: center; gap: 12px;">
+              <svg width="24" height="24" fill="currentColor" viewBox="0 0 20 20" style="color: ${getAlertColor(type)};">
                 <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
               </svg>
               Alert Message
             </h2>
-            <p style="color: #374151; line-height: 1.8; font-size: 17px; margin: 0;">${message}</p>
+            <p style="color: #374151; line-height: 1.8; font-size: 18px; margin: 0; padding: 16px 20px; background-color: #f9fafb; border-radius: 12px; border-left: 4px solid ${getAlertColor(type)};">${message}</p>
           </div>
 
           <!-- Alert Details Section -->
-          <div style="background-color: white; border-radius: 14px; padding: 28px; margin-bottom: 28px; border: 1px solid #e5e7eb; box-shadow: 0 2px 8px rgba(0,0,0,0.07);">
-            <h3 style="margin: 0 0 18px 0; color: #1f2937; font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px;">
-              <svg width="22" height="22" fill="currentColor" viewBox="0 0 20 20">
+          <div style="background-color: white; border-radius: 18px; padding: 32px; margin-bottom: 32px; border: 1px solid #e5e7eb; box-shadow: 0 4px 16px rgba(0,0,0,0.06);">
+            <h3 style="margin: 0 0 24px 0; color: #1f2937; font-size: 24px; font-weight: 700; display: flex; align-items: center; gap: 12px;">
+              <svg width="24" height="24" fill="currentColor" viewBox="0 0 20 20" style="color: ${getAlertColor(type)};">
                 <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd"></path>
               </svg>
               Alert Details
             </h3>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px;">
-              <div style="display: flex; flex-direction: column; gap: 5px;">
-                <span style="font-size: 13px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 1px;">Severity</span>
-                <span style="font-size: 15px; font-weight: 600; color: #1f2937;">${severity.toUpperCase()}</span>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px;">
+              <div style="display: flex; align-items: center; padding: 20px; background-color: white; border-radius: 16px; border: 1px solid #e5e7eb; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                <div style="background-color: ${getAlertColor(type)}15; padding: 12px; border-radius: 12px; margin-right: 16px;">
+                  <svg width="24" height="24" fill="${getAlertColor(type)}" viewBox="0 0 20 20">
+                    <path d="M3.807 2.342a1 1 0 010 1.414l-1.06 1.06a1 1 0 11-1.414-1.414l1.06-1.06a1 1 0 011.414 0zm12.728 0a1 1 0 011.414 0l1.06 1.06a1 1 0 11-1.414 1.414l-1.06-1.06a1 1 0 010-1.414zM10 2a1 1 0 011 1v1.586l4.707 4.707a1 1 0 01-1.414 1.414L10 6.414l-4.293 4.293a1 1 0 01-1.414-1.414L9 4.586V3a1 1 0 011-1z"/>
+                  </svg>
+                </div>
+                <div>
+                  <div style="font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Severity Level</div>
+                  <div style="font-size: 18px; font-weight: 700; color: ${getAlertColor(type)};">${severity.toUpperCase()}</div>
+                </div>
               </div>
-              <div style="display: flex; flex-direction: column; gap: 5px;">
-                <span style="font-size: 13px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 1px;">Priority</span>
-                <span style="font-size: 15px; font-weight: 600; color: #1f2937;">${priority.toUpperCase()}</span>
+              
+              <div style="display: flex; align-items: center; padding: 20px; background-color: white; border-radius: 16px; border: 1px solid #e5e7eb; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                <div style="background-color: ${getAlertColor(type)}15; padding: 12px; border-radius: 12px; margin-right: 16px;">
+                  <svg width="24" height="24" fill="${getAlertColor(type)}" viewBox="0 0 20 20">
+                    <path d="M5 4a1 1 0 00-2 0v7.268a2 2 0 000 3.464V16a1 1 0 102 0v-1.268a2 2 0 000-3.464V4zM11 4a1 1 0 10-2 0v1.268a2 2 0 000 3.464V16a1 1 0 102 0V8.732a2 2 0 000-3.464V4zM16 3a1 1 0 011 1v7.268a2 2 0 010 3.464V16a1 1 0 11-2 0v-1.268a2 2 0 010-3.464V4a1 1 0 011-1z"/>
+                  </svg>
+                </div>
+                <div>
+                  <div style="font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Priority</div>
+                  <div style="font-size: 18px; font-weight: 700; color: ${getAlertColor(type)};">${priority.toUpperCase()}</div>
+                </div>
               </div>
-              <div style="display: flex; flex-direction: column; gap: 5px;">
-                <span style="font-size: 13px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 1px;">Status</span>
-                <span style="font-size: 15px; font-weight: 600; color: #1f2937;">${status.toUpperCase()}</span>
+
+              <div style="display: flex; align-items: center; padding: 20px; background-color: white; border-radius: 16px; border: 1px solid #e5e7eb; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                <div style="background-color: ${getAlertColor(type)}15; padding: 12px; border-radius: 12px; margin-right: 16px;">
+                  <svg width="24" height="24" fill="${getAlertColor(type)}" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                  </svg>
+                </div>
+                <div>
+                  <div style="font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Status</div>
+                  <div style="font-size: 18px; font-weight: 700; color: ${getAlertColor(type)};">${status.toUpperCase()}</div>
+                </div>
               </div>
-              <div style="display: flex; flex-direction: column; gap: 5px;">
-                <span style="font-size: 13px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 1px;">Created</span>
-                <span style="font-size: 15px; font-weight: 600; color: #1f2937;">${new Date(created_at).toLocaleString()}</span>
+
+              <div style="display: flex; align-items: center; padding: 20px; background-color: white; border-radius: 16px; border: 1px solid #e5e7eb; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                <div style="background-color: ${getAlertColor(type)}15; padding: 12px; border-radius: 12px; margin-right: 16px;">
+                  <svg width="24" height="24" fill="${getAlertColor(type)}" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/>
+                  </svg>
+                </div>
+                <div>
+                  <div style="font-size: 13px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Created On</div>
+                  <div style="font-size: 18px; font-weight: 700; color: ${getAlertColor(type)};">${new Date(created_at).toLocaleString()}</div>
+                </div>
               </div>
-              ${updated_at && updated_at !== created_at ? `
-              <div style="display: flex; flex-direction: column; gap: 5px;">
-                <span style="font-size: 13px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 1px;">Updated</span>
-                <span style="font-size: 15px; font-weight: 600; color: #1f2937;">${new Date(updated_at).toLocaleString()}</span>
+            </div>
+
+            <!-- Location Information -->
+            ${geocodedAddress || (latitude && longitude) ? `
+            <div style="margin-top: 32px; background-color: white; border-radius: 20px; border: 1px solid #e5e7eb; box-shadow: 0 4px 16px rgba(0,0,0,0.06); overflow: hidden;">
+              <!-- Location Header -->
+              <div style="background: linear-gradient(135deg, ${getAlertColor(type)}11 0%, ${getAlertColor(type)}22 100%); padding: 24px; border-bottom: 1px solid #e5e7eb;">
+                <div style="display: flex; align-items: center; gap: 16px;">
+                  <div style="background-color: ${getAlertColor(type)}22; padding: 12px; border-radius: 12px;">
+                    <svg width="28" height="28" fill="${getAlertColor(type)}" viewBox="0 0 20 20">
+                      <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"></path>
+                    </svg>
+                  </div>
+                  <div>
+                    <h4 style="margin: 0 0 4px 0; font-size: 20px; font-weight: 700; color: #1f2937;">Incident Location</h4>
+                    ${geocodedAddress ? `
+                    <p style="margin: 0; font-size: 15px; color: #6b7280;">${geocodedAddress}</p>
+                    ` : ''}
+                  </div>
+                </div>
               </div>
-              ` : ''}
+
               ${latitude && longitude ? `
-              <div style="display: flex; flex-direction: column; gap: 5px;">
-                <span style="font-size: 13px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 1px;">Coordinates</span>
-                <span style="font-size: 15px; font-weight: 600; color: #1f2937;">${parseFloat(latitude).toFixed(6)}, ${parseFloat(longitude).toFixed(6)}</span>
+              <!-- Map Container -->
+              <div style="padding: 24px;">
+                <!-- Coordinates Display -->
+                <div style="display: flex; gap: 16px; margin-bottom: 20px;">
+                  <div style="flex: 1; padding: 16px; background-color: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb;">
+                    <div style="font-size: 13px; font-weight: 600; color: #6b7280; margin-bottom: 4px;">Latitude</div>
+                    <div style="font-size: 16px; font-weight: 700; color: #1f2937;">${parseFloat(latitude).toFixed(6)}</div>
+                  </div>
+                  <div style="flex: 1; padding: 16px; background-color: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb;">
+                    <div style="font-size: 13px; font-weight: 600; color: #6b7280; margin-bottom: 4px;">Longitude</div>
+                    <div style="font-size: 16px; font-weight: 700; color: #1f2937;">${parseFloat(longitude).toFixed(6)}</div>
+                  </div>
+                  ${radius_km ? `
+                  <div style="flex: 1; padding: 16px; background-color: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb;">
+                    <div style="font-size: 13px; font-weight: 600; color: #6b7280; margin-bottom: 4px;">Affected Radius</div>
+                    <div style="font-size: 16px; font-weight: 700; color: #1f2937;">${radius_km} km</div>
+                  </div>
+                  ` : ''}
+                </div>
+
+                <!-- Map Image -->
+                <div style="position: relative; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08);">
+                  <img src="https://maps.googleapis.com/maps/api/staticmap?center=${latitude},${longitude}&zoom=15&size=800x400&scale=2&markers=color:${getAlertColor(type).replace('#', '0x')}%7C${latitude},${longitude}&key=${process.env.GOOGLE_MAPS_API_KEY || ''}" 
+                    alt="Alert Location" 
+                    style="width: 100%; height: auto; display: block;">
+                  
+                  <!-- Map Overlay -->
+                  <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 20px; background: linear-gradient(to top, rgba(0,0,0,0.8), transparent); display: flex; justify-content: space-between; align-items: center;">
+                    <div style="color: white;">
+                      <div style="font-size: 14px; font-weight: 600; opacity: 0.9; margin-bottom: 4px;">View Full Map</div>
+                      <div style="font-size: 12px; opacity: 0.7;">Click to open in Google Maps</div>
+                    </div>
+                    <a href="https://www.google.com/maps?q=${latitude},${longitude}" 
+                      target="_blank"
+                      style="display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: white; color: ${getAlertColor(type)}; text-decoration: none; border-radius: 10px; font-size: 15px; font-weight: 600; transition: all 0.3s ease;">
+                      <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z"></path>
+                        <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z"></path>
+                      </svg>
+                      Open Maps
+                    </a>
+                  </div>
+                </div>
               </div>
               ` : ''}
-              ${radius_km ? `
-              <div style="display: flex; flex-direction: column; gap: 5px;">
-                <span style="font-size: 13px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 1px;">Radius</span>
-                <span style="font-size: 15px; font-weight: 600; color: #1f2937;">${radius_km} km</span>
-              </div>
-              ` : ''}
-            </div>
-
-            ${geocodedAddress ? `
-            <div style="margin-top: 22px; padding: 18px; background-color: #f3f4f6; border-radius: 10px;">
-              <div style="display: flex; flex-direction: column; gap: 5px;">
-                <span style="font-size: 13px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 1px;">Location</span>
-                <span style="font-size: 15px; font-weight: 600; color: #1f2937;">${geocodedAddress}</span>
-              </div>
-            </div>
-            ` : ''}
-
-            ${latitude && longitude ? `
-            <div style="margin-top: 22px; text-align: center;">
-              <img src="https://maps.googleapis.com/maps/api/staticmap?center=${latitude},${longitude}&zoom=15&size=400x200&markers=color:red%7C${latitude},${longitude}&key=${process.env.GOOGLE_MAPS_API_KEY || ''}" alt="Alert Location" style="max-width: 100%; height: auto; border-radius: 10px; border: 2px solid #e5e7eb;">
-              <br>
-              <a href="https://www.google.com/maps?q=${latitude},${longitude}" style="display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; padding: 10px 20px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 8px; font-size: 15px; font-weight: 600;">
-                <svg width="18" height="18" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"></path>
-                </svg>
-                View on Google Maps
-              </a>
             </div>
             ` : ''}
           </div>
 
           <!-- Recipients Section -->
           ${recipients && recipients.length > 0 ? `
-          <div style="background-color: white; border-radius: 14px; padding: 28px; margin-bottom: 28px; border: 1px solid #e5e7eb; box-shadow: 0 2px 8px rgba(0,0,0,0.07);">
-            <h3 style="margin: 0 0 14px 0; color: #1f2937; font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px;">
-              <svg width="22" height="22" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-              </svg>
-              Recipients
-            </h3>
-            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-              ${recipients.map(recipient => `<span style="display: inline-flex; align-items: center; background-color: #f3f4f6; color: #374151; padding: 8px 16px; border-radius: 18px; font-size: 14px; font-weight: 600; border: 1px solid #d1d5db;">${recipient}</span>`).join('')}
+          <div style="background-color: white; border-radius: 20px; border: 1px solid #e5e7eb; box-shadow: 0 4px 16px rgba(0,0,0,0.06); overflow: hidden;">
+            <!-- Recipients Header -->
+            <div style="background: linear-gradient(135deg, ${getAlertColor(type)}11 0%, ${getAlertColor(type)}22 100%); padding: 24px; border-bottom: 1px solid #e5e7eb;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 16px;">
+                  <div style="background-color: ${getAlertColor(type)}22; padding: 12px; border-radius: 12px;">
+                    <svg width="28" height="28" fill="${getAlertColor(type)}" viewBox="0 0 20 20">
+                      <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"></path>
+                      <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"></path>
+                    </svg>
+                  </div>
+                  <div>
+                    <h4 style="margin: 0 0 4px 0; font-size: 20px; font-weight: 700; color: #1f2937;">Alert Recipients</h4>
+                    <p style="margin: 0; font-size: 14px; color: #6b7280;">Total Recipients: ${recipients.length}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Recipients List -->
+            <div style="padding: 24px;">
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+                ${recipients.map((recipient, index) => `
+                  <div style="display: flex; align-items: center; padding: 16px; background-color: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb; gap: 12px;">
+                    <div style="background-color: ${getAlertColor(type)}15; padding: 10px; border-radius: 10px; flex-shrink: 0;">
+                      <svg width="20" height="20" fill="${getAlertColor(type)}" viewBox="0 0 20 20">
+                        <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"></path>
+                        <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"></path>
+                      </svg>
+                    </div>
+                    <div style="min-width: 0;">
+                      <div style="font-size: 15px; font-weight: 600; color: #1f2937; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${recipient}</div>
+                      <div style="font-size: 13px; color: #6b7280;">Recipient #${index + 1}</div>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
             </div>
           </div>
           ` : ''}
 
           <!-- Action Section -->
-          <div style="background: linear-gradient(135deg, #1f2937 0%, #374151 100%); color: white; padding: 28px; text-align: center; border-radius: 14px; margin-bottom: 28px;">
-            <h3 style="margin: 0 0 10px 0; font-size: 20px; font-weight: 700;">Official Emergency Alert</h3>
-            <p style="margin: 0 0 18px 0; font-size: 15px; opacity: 0.92;">This is an official alert from the ProteQ Emergency Management System</p>
-            <p style="margin: 14px 0 0 0; font-size: 13px; opacity: 0.85;">Sent on: ${new Date().toLocaleString()}</p>
+          <div style="background: linear-gradient(135deg, ${getAlertColor(type)} 0%, ${getAlertColor(type)}ee 100%); color: white; padding: 36px; text-align: center; border-radius: 18px; margin-bottom: 32px; position: relative; overflow: hidden;">
+            <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: radial-gradient(circle at top right, rgba(255,255,255,0.15) 0%, transparent 60%); z-index: 1;"></div>
+            <div style="position: relative; z-index: 2;">
+              <div style="display: inline-flex; align-items: center; gap: 12px; background-color: rgba(255,255,255,0.22); backdrop-filter: blur(8px); padding: 12px 24px; border-radius: 32px; margin-bottom: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                <svg width="24" height="24" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                </svg>
+                <span style="font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px;">Official Emergency Alert</span>
+              </div>
+              <h3 style="margin: 0 0 16px 0; font-size: 24px; font-weight: 800; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">SoteROS Emergency Management System</h3>
+              <p style="margin: 0 0 24px 0; font-size: 16px; opacity: 0.95; font-weight: 500; max-width: 500px; margin-left: auto; margin-right: auto; line-height: 1.6;">This is an official alert notification from the MDRRMO Rosario, Batangas Emergency Response Team.</p>
+              <div style="font-size: 14px; opacity: 0.9; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <svg width="16" height="16" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path>
+                </svg>
+                Sent on: ${new Date().toLocaleString()}
+              </div>
+            </div>
           </div>
         </div>
 
         <!-- Footer -->
-        <div style="background-color: #1f2937; color: #9ca3af; padding: 28px; text-align: center;">
-          <div style="max-width: 400px; margin: 0 auto;">
-            <div style="font-size: 18px; font-weight: 700; color: #f3f4f6; margin-bottom: 6px;">MDRRMO Rosario, Batangas</div>
-            <div style="opacity: 0.85; font-size: 15px;">Emergency Management System</div>
+        <div style="background: linear-gradient(135deg, #1f2937 0%, #111827 100%); color: #9ca3af; padding: 36px; text-align: center; border-bottom-left-radius: 24px; border-bottom-right-radius: 24px; position: relative; overflow: hidden;">
+          <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: radial-gradient(circle at top right, rgba(255,255,255,0.08) 0%, transparent 60%); z-index: 1;"></div>
+          <div style="position: relative; z-index: 2; max-width: 440px; margin: 0 auto;">
+            <div style="margin-bottom: 24px;">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto 16px; color: #f3f4f6;">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+              </svg>
+            </div>
+            <div style="font-size: 22px; font-weight: 800; color: #f3f4f6; margin-bottom: 8px; letter-spacing: 0.5px;">MDRRMO Rosario, Batangas</div>
+            <div style="opacity: 0.9; font-size: 16px; font-weight: 500; letter-spacing: 0.3px;">SoteROS Emergency Management System</div>
           </div>
         </div>
       </div>

@@ -5,6 +5,8 @@ import { useState, useEffect } from "react"
 import Navbar from "../../components/Navbar"
 import Carousel from "../../components/base/Carousel"
 import AnimatedCounter from "../../components/base/AnimatedCounter"
+import PrivacyPolicyModal from "../../components/PrivacyPolicyModal"
+import TermsOfServiceModal from "../../components/TermsOfServiceModal"
 import { getAuthState, type UserData } from "../../utils/auth"
 import { publicApi } from "../../utils/api"
 import { useScrollAnimation } from "../../hooks/useScrollAnimation"
@@ -13,7 +15,10 @@ export default function Home() {
   const navigate = useNavigate()
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [userData, setUserData] = useState<UserData | null>(null)
+  const [isAuthLoading, setIsAuthLoading] = useState(true) // Add loading state for auth
   const [showHotlineModal, setShowHotlineModal] = useState(false)
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false)
+  const [showTermsModal, setShowTermsModal] = useState(false)
   const [openFaq, setOpenFaq] = useState<number | null>(0)
   const [stats, setStats] = useState({
     responders: 0,
@@ -21,6 +26,14 @@ export default function Home() {
     residentsCovered: 0,
     totalIncidents: 0,
   })
+  
+  // Default stats for fallback
+  const defaultStats = {
+    responders: 25,
+    evacuationCenters: 8,
+    residentsCovered: 1500,
+    totalIncidents: 12,
+  }
   const [loadingStats, setLoadingStats] = useState(true)
   const [statsError, setStatsError] = useState<string | null>(null)
   const [testimonials, setTestimonials] = useState<
@@ -40,11 +53,12 @@ export default function Home() {
   const [showAllTestimonials, setShowAllTestimonials] = useState(false)
   
   // Scroll animation for stats section
-  const { ref: statsRef, isVisible: statsVisible } = useScrollAnimation({
+  const { ref: statsRef } = useScrollAnimation({
     threshold: 0.2,
     rootMargin: '0px 0px -100px 0px',
     triggerOnce: true
   })
+  
 
   useEffect(() => {
     // Check authentication state using the new utility
@@ -65,6 +79,7 @@ export default function Home() {
     const isUserAuth = authState.isAuthenticated && authState.userType === "user"
     setIsLoggedIn(isUserAuth)
     setUserData(isUserAuth ? authState.userData : null)
+    setIsAuthLoading(false) // Set auth loading to false after initial check
 
     // Listen for storage changes to update authentication state
     const handleStorageChange = () => {
@@ -117,18 +132,23 @@ export default function Home() {
       try {
         const response = await publicApi.getHomeStats()
         if (response.success) {
-          const apiStats = response.stats as any // Type assertion for API response
+          const apiStats = response.stats as any
+          
+          // Set stats with fallback values
           setStats({
-            responders: apiStats.staff?.total || 0,
-            evacuationCenters: apiStats.evacuation_centers?.total || 0,
-            residentsCovered: apiStats.users?.total || 0, // Map users.total to residentsCovered
-            totalIncidents: apiStats.incidents?.total || 0,
+            responders: apiStats?.staff?.total || 0,
+            evacuationCenters: apiStats?.evacuation_centers?.total || 0,
+            residentsCovered: apiStats?.users?.total || 0,
+            totalIncidents: apiStats?.incidents?.total || 0,
           })
         } else {
+          console.error('Stats API returned success: false', response)
           setStatsError("Failed to load stats")
         }
       } catch (error) {
-        setStatsError("Failed to load stats")
+        console.error('Error fetching stats:', error)
+        setStats(defaultStats) // Use default stats as fallback
+        setStatsError("Using sample data - API unavailable")
       } finally {
         setLoadingStats(false)
       }
@@ -226,12 +246,27 @@ export default function Home() {
     },
   ]
 
+  // Show loading screen while authentication is being checked
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-blue-100 to-blue-200 rounded-2xl flex items-center justify-center mx-auto mb-6 animate-pulse">
+            <i className="ri-shield-check-line text-3xl md:text-4xl text-blue-600"></i>
+          </div>
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">Loading...</h2>
+          <p className="text-gray-600">Please wait while we verify your access</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
       <Navbar isAuthenticated={isLoggedIn} userData={userData} />
 
       {/* Hero Section */}
-      <div className="relative overflow-hidden">
+      <div id="hero-section" className="relative overflow-hidden">
         {/* Hero Background with Image */}
         <div className="relative h-[500px] md:h-[700px] lg:h-[800px] bg-gradient-to-r from-blue-900/90 to-blue-800/80">
           {/* Background Image */}
@@ -261,7 +296,7 @@ export default function Home() {
                   <h1 className="text-3xl md:text-5xl lg:text-6xl font-bold text-white mb-4 md:mb-6 leading-tight text-balance">
                     Welcome back to
                     <span className="block text-yellow-300 bg-gradient-to-r from-yellow-300 to-yellow-400 bg-clip-text text-transparent">
-                      ProteQ Emergency Hub
+                      SoteROS Emergency Hub
                     </span>
                   </h1>
 
@@ -297,6 +332,13 @@ export default function Home() {
                   <div className="flex flex-col sm:flex-row gap-4 md:gap-6">
                     <a
                       href="#services"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const servicesSection = document.getElementById('services');
+                        if (servicesSection) {
+                          servicesSection.scrollIntoView({ behavior: 'smooth' });
+                        }
+                      }}
                       className="bg-gradient-to-r from-yellow-500 to-yellow-400 hover:from-yellow-400 hover:to-yellow-300 text-blue-900 px-8 py-4 md:px-10 md:py-5 rounded-xl font-bold text-lg md:text-xl transition-all duration-300 shadow-2xl hover:shadow-yellow-500/25 hover:-translate-y-1 text-center"
                     >
                       Emergency Services
@@ -605,12 +647,15 @@ export default function Home() {
             </div>
           ) : statsError ? (
             <div className="text-center bg-white rounded-3xl shadow-xl border-2 border-gray-100 p-12 md:p-16">
-              <div className="w-20 h-20 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                <i className="ri-error-warning-line text-3xl text-red-500"></i>
+              <div className="w-20 h-20 bg-yellow-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <i className="ri-information-line text-3xl text-yellow-500"></i>
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-3">Unable to Load Statistics</h3>
+              <h3 className="text-2xl font-bold text-gray-900 mb-3">Using Sample Data</h3>
               <p className="text-gray-600 text-lg">
-                We're experiencing technical difficulties. Please try again later.
+                {statsError.includes("sample data") 
+                  ? "Displaying sample statistics while we connect to our database."
+                  : "We're experiencing technical difficulties. Please try again later."
+                }
               </p>
             </div>
           ) : (
@@ -663,7 +708,7 @@ export default function Home() {
                     <div className={`text-3xl md:text-4xl font-bold ${s.color} mb-2`}>
                       <AnimatedCounter
                         value={parseInt(s.value.replace(/[^\d]/g, ''))}
-                        isVisible={statsVisible}
+                        isVisible={true}
                         duration={2000}
                         suffix={s.value.includes('+') ? '+' : ''}
                         className="inline-block"
@@ -789,6 +834,8 @@ export default function Home() {
                 { name: "MDRRMO", image: "/images/partners/MDRRMO.png", alt: "MDRRMO  " },
                 { name: "BFP", image: "/images/partners/bfp.jpg", alt: "Bureau of Fire Protection" },
                 { name: "PNP", image: "/images/partners/pnp.jpg", alt: "Philippine National Police" },
+                { name: "SOTEROS", image: "/images/soterblue.png", alt: "Philippine National Police" },
+
                 { name: "RedCross", image: "/images/partners/prc.png", alt: "Philippine Red Cross" },
                 { name: "MHo", image: "/images/partners/mho.png", alt: "MHO" },
                 { name: "MSWDO", image: "/images/partners/msdw.jpg", alt: "MSWDO" },
@@ -799,7 +846,7 @@ export default function Home() {
               autoPlay={true}
               autoPlayInterval={3000}
               showDots={true}
-              showArrows={true}
+              showArrows={false}
               className="opacity-90"
               itemClassName="px-2"
               renderItem={(partner, index) => (
@@ -846,7 +893,7 @@ export default function Home() {
               autoPlay={true}
               autoPlayInterval={3000}
               showDots={true}
-              showArrows={true}
+              showArrows={false}
               className="opacity-90"
               itemClassName="px-2"
               renderItem={(partner, index) => (
@@ -878,65 +925,122 @@ export default function Home() {
       </section>
 
       {/* FAQ */}
-      <section id="faq-section" className="bg-gradient-to-b from-white to-slate-50 py-20 md:py-28">
-        <div className="container mx-auto px-4 lg:px-8 max-w-4xl">
-          <h3 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 text-center mb-12 md:mb-16">
-            Frequently Asked Questions
-          </h3>
-          <div className="space-y-4 md:space-y-6">
-            {[
-              {
-                q: "How do I report an emergency?",
-                a: "Click Report Incident, describe the situation, and submit your location.",
-              },
-              {
-                q: "Where can I find evacuation centers?",
-                a: "Go to Evacuation Centers to see locations, capacity, and contact info.",
-              },
-              {
-                q: "Do I need an account?",
-                a: "Browsing is open; creating an account enables alerts and faster reporting.",
-              },
-              {
-                q: "What should I do during a typhoon?",
-                a: "Stay indoors, avoid flooded areas, monitor weather updates, and follow evacuation orders if issued.",
-              },
-              {
-                q: "How can I check if my family is safe?",
-                a: "Use the Welfare Check feature to report your status and location during emergencies.",
-              },
-              {
-                q: "What emergency numbers should I call?",
-                a: "MDRRMO: (043) 311.2935, PNP: (043) 724.7026, BFP: (043) 312.1102. Click Emergency Hotline for full list.",
-              },
-              {
-                q: "How do I prepare for disasters?",
-                a: "Create an emergency kit, know evacuation routes, stay informed through our alerts, and follow safety protocols.",
-              },
-              {
-                q: "Is this service available 24/7?",
-                a: "Yes, our emergency reporting system is available 24/7. Emergency hotlines are also monitored around the clock.",
-              },
-            ].map((item, idx) => (
-              <div
-                key={idx}
-                className="border-2 border-gray-200 rounded-2xl bg-white shadow-lg hover:shadow-xl transition-all duration-300"
-              >
-                <button
-                  className="w-full flex items-center justify-between p-6 md:p-8 text-left"
-                  onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
-                  aria-expanded={openFaq === idx}
-                >
-                  <span className="font-semibold text-gray-900 text-lg md:text-xl">{item.q}</span>
-                  <i
-                    className={`ri-arrow-down-s-line transition-transform text-2xl ${openFaq === idx ? "rotate-180" : ""}`}
-                  ></i>
-                </button>
-                {openFaq === idx && (
-                  <div className="px-6 md:px-8 pb-6 md:pb-8 text-gray-600 text-lg leading-relaxed">{item.a}</div>
-                )}
+      <section id="faq-section" className="bg-gradient-to-br from-slate-50 via-white to-blue-50 py-20 md:py-28">
+        <div className="container mx-auto px-4 lg:px-8 max-w-7xl">
+          <div className="grid lg:grid-cols-2 gap-12 md:gap-16 items-start">
+            {/* Left Column - Support & Description */}
+            <div className="space-y-8">
+              <div className="relative">
+                {/* Background decoration */}
+                <div className="absolute -top-4 -left-4 w-24 h-24 bg-gradient-to-br from-blue-100 to-purple-100 rounded-full opacity-50"></div>
+                <div className="absolute -bottom-4 -right-4 w-16 h-16 bg-gradient-to-br from-green-100 to-blue-100 rounded-full opacity-50"></div>
+                
+                <div className="relative bg-white/80 backdrop-blur-sm rounded-3xl p-8 md:p-10 shadow-xl border border-white/20">
+                  <div className="inline-flex items-center px-4 py-2 bg-gradient-to-r from-blue-100 to-purple-100 rounded-full mb-6">
+                    <i className="ri-customer-service-2-line text-blue-600 mr-2"></i>
+                    <span className="text-blue-700 font-semibold text-sm">Support</span>
+                  </div>
+                  
+                  <h3 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-6 leading-tight">
+                    Frequently Asked
+                    <span className="block text-transparent bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text">
+                      Questions
+                    </span>
+                  </h3>
+                  
+                  <p className="text-lg text-gray-600 leading-relaxed mb-8">
+                    Everything you need to know about emergency services and disaster preparedness. 
+                    Get instant answers to common questions about our emergency management platform.
+                  </p>
+                  
+                  
+                </div>
               </div>
-            ))}
+            </div>
+
+            {/* Right Column - FAQ Items */}
+            <div className="space-y-4">
+              {[
+                {
+                  q: "How do I report an emergency?",
+                  a: "Click Report Incident, describe the situation, and submit your location. Our team will respond immediately to your emergency report.",
+                  icon: "ri-error-warning-line",
+                  color: "from-red-500 to-pink-500"
+                },
+                {
+                  q: "Where can I find evacuation centers?",
+                  a: "Go to Evacuation Centers to see locations, capacity, and contact info. All centers are updated in real-time with current availability.",
+                  icon: "ri-building-2-line",
+                  color: "from-blue-500 to-cyan-500"
+                },
+                {
+                  q: "Do I need an account?",
+                  a: "Browsing is open; creating an account enables alerts and faster reporting. You can access most features without registration.",
+                  icon: "ri-user-line",
+                  color: "from-green-500 to-emerald-500"
+                },
+                {
+                  q: "What should I do during a typhoon?",
+                  a: "Stay indoors, avoid flooded areas, monitor weather updates, and follow evacuation orders if issued. Keep emergency supplies ready.",
+                  icon: "ri-typhoon-line",
+                  color: "from-orange-500 to-red-500"
+                },
+                {
+                  q: "How can I check if my family is safe?",
+                  a: "Use the Welfare Check feature to report your status and location during emergencies. This helps us track community safety.",
+                  icon: "ri-heart-pulse-line",
+                  color: "from-purple-500 to-pink-500"
+                },
+                {
+                  q: "What emergency numbers should I call?",
+                  a: "MDRRMO: (043) 311.2935, PNP: (043) 724.7026, BFP: (043) 312.1102. Click Emergency Hotline for full list of contacts.",
+                  icon: "ri-phone-line",
+                  color: "from-indigo-500 to-blue-500"
+                },
+                {
+                  q: "How do I prepare for disasters?",
+                  a: "Create an emergency kit, know evacuation routes, stay informed through our alerts, and follow safety protocols provided on our platform.",
+                  icon: "ri-shield-star-line",
+                  color: "from-teal-500 to-green-500"
+                },
+                {
+                  q: "Is this service available 24/7?",
+                  a: "Yes, our emergency reporting system is available 24/7. Emergency hotlines are also monitored around the clock for immediate response.",
+                  icon: "ri-time-line",
+                  color: "from-amber-500 to-orange-500"
+                },
+              ].map((item, idx) => (
+                <div
+                  key={idx}
+                  className="group bg-white rounded-2xl border border-gray-100 hover:border-gray-200 hover:shadow-lg transition-all duration-300 overflow-hidden"
+                >
+                  <button
+                    className="w-full flex items-center justify-between p-6 text-left hover:bg-gray-50/50 transition-colors duration-200"
+                    onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
+                    aria-expanded={openFaq === idx}
+                  >
+                    <div className="flex items-center space-x-4 flex-1">
+                      <div className={`w-12 h-12 bg-gradient-to-r ${item.color} rounded-xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform duration-200`}>
+                        <i className={`${item.icon} text-white text-lg`}></i>
+                      </div>
+                      <span className="font-semibold text-gray-900 text-lg pr-4 leading-tight">{item.q}</span>
+                    </div>
+                    <div className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center transition-all duration-200 flex-shrink-0 group-hover:scale-110">
+                      <i
+                        className={`ri-${openFaq === idx ? "subtract" : "add"}-line text-gray-600 text-lg transition-transform duration-200`}
+                      ></i>
+                    </div>
+                  </button>
+                  {openFaq === idx && (
+                    <div className="px-6 pb-6">
+                      <div className="ml-16 border-l-2 border-gray-100 pl-6">
+                        <p className="text-gray-600 text-base leading-relaxed">{item.a}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -946,9 +1050,9 @@ export default function Home() {
       {/* Hotline Modal */}
       {showHotlineModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl w-full max-w-md mx-4 shadow-2xl max-h-[90vh] flex flex-col">
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-red-600 to-red-700 text-white p-4 rounded-t-xl sticky top-0 z-10">
+            <div className="bg-gradient-to-r from-red-600 to-red-700 text-white p-4 rounded-t-xl flex-shrink-0">
               <div className="flex items-center justify-between">
                 <div className="flex items-center">
                   <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center mr-3">
@@ -972,8 +1076,9 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-4">
+            {/* Modal Body - Scrollable */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-4">
               {/* Priority Section - High Priority */}
               <div className="mb-6">
                 <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center">
@@ -1083,10 +1188,11 @@ export default function Home() {
                   </div>
                 </div>
               </div>
+              </div>
             </div>
 
             {/* Modal Footer */}
-            <div className="bg-gray-50 p-4 rounded-b-xl border-t border-gray-200 sticky bottom-0">
+            <div className="bg-gray-50 p-4 rounded-b-xl border-t border-gray-200 flex-shrink-0">
               <div className="flex justify-between items-center">
                 <div className="flex items-center text-gray-600">
                   <i className="ri-time-line mr-2 text-blue-500 text-sm"></i>
@@ -1153,6 +1259,21 @@ export default function Home() {
                 <ul className="space-y-3">
                   <li>
                     <Link
+                      to="/"
+                      onClick={() => {
+                        console.log("Home link clicked, navigating to /");
+                        // Ensure we scroll to top when navigating
+                        setTimeout(() => {
+                          window.scrollTo(0, 0);
+                        }, 100);
+                      }}
+                      className="text-gray-300 hover:text-white transition-colors duration-300"
+                    >
+                      Home
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
                       to="/evacuation-center"
                       className="text-gray-300 hover:text-white transition-colors duration-300"
                     >
@@ -1176,15 +1297,21 @@ export default function Home() {
                     </Link>
                   </li>
                   <li>
-                    <a href="#" className="text-gray-300 hover:text-white transition-colors duration-300">
-                      Weather Updates
-                    </a>
+                    <Link
+                      to="/about"
+                      onClick={() => {
+                        console.log("About link clicked, navigating to /about");
+                        // Ensure we scroll to top when navigating
+                        setTimeout(() => {
+                          window.scrollTo(0, 0);
+                        }, 100);
+                      }}
+                      className="text-gray-300 hover:text-white transition-colors duration-300"
+                    >
+                      About
+                    </Link>
                   </li>
-                  <li>
-                    <a href="#" className="text-gray-300 hover:text-white transition-colors duration-300">
-                      Community Resources
-                    </a>
-                  </li>
+                
                 </ul>
               </div>
 
@@ -1229,23 +1356,38 @@ export default function Home() {
                 © 2024 MDRRMO Rosario, Batangas. All rights reserved.
               </div>
               <div className="flex flex-wrap gap-6 text-sm">
-                <a href="#" className="text-gray-400 hover:text-white transition-colors duration-300">
+                <button 
+                  onClick={() => setShowPrivacyModal(true)}
+                  className="text-gray-400 hover:text-white transition-colors duration-300"
+                >
                   Privacy Policy
-                </a>
-                <a href="#" className="text-gray-400 hover:text-white transition-colors duration-300">
+                </button>
+                <button 
+                  onClick={() => setShowTermsModal(true)}
+                  className="text-gray-400 hover:text-white transition-colors duration-300"
+                >
                   Terms of Service
-                </a>
-                <a href="#" className="text-gray-400 hover:text-white transition-colors duration-300">
-                  Accessibility
-                </a>
-                <a href="#" className="text-gray-400 hover:text-white transition-colors duration-300">
-                  Site Map
-                </a>
+                </button>
               </div>
+            </div>
+            <div className="mt-4 text-center">
+              <p className="text-gray-500 text-sm">
+                Made with <span className="text-red-500">❤️</span> in the Philippines
+              </p>
             </div>
           </div>
         </div>
       </footer>
+
+      {/* Modals */}
+      <PrivacyPolicyModal 
+        isOpen={showPrivacyModal} 
+        onClose={() => setShowPrivacyModal(false)} 
+      />
+      <TermsOfServiceModal 
+        isOpen={showTermsModal} 
+        onClose={() => setShowTermsModal(false)} 
+      />
     </div>
   )
 }

@@ -155,6 +155,46 @@ class NotificationService {
     });
   }
 
+  // Create incident report validation notification
+  static async createIncidentValidationNotification(incidentData, validationStatus, userId) {
+    const { incident_id, incident_type, description, priority_level } = incidentData;
+    
+    const statusEmoji = validationStatus === 'validated' ? '✅' : '❌';
+    const statusText = validationStatus === 'validated' ? 'Validated' : 'Rejected';
+    const severity = validationStatus === 'validated' ? 'info' : 'warning';
+    
+    const title = `${statusEmoji} Report ${statusText}: ${incident_type}`;
+    const message = `Your incident report "${incident_type}" has been ${validationStatus} by the admin team. ${validationStatus === 'validated' ? 'The response team has been notified.' : 'Please review and resubmit if needed.'}`;
+    
+    return await this.createNotificationForUser(userId, {
+      type: 'system',
+      title: title,
+      message: message,
+      severity: severity,
+      relatedId: incident_id
+    });
+  }
+
+  // Create incident status update notification
+  static async createIncidentStatusNotification(incidentData, status, userId) {
+    const { incident_id, incident_type, description, priority_level } = incidentData;
+    
+    const statusEmoji = status === 'resolved' ? '🎉' : '🔒';
+    const statusText = status === 'resolved' ? 'Resolved' : 'Closed';
+    const severity = 'info';
+    
+    const title = `${statusEmoji} Report ${statusText}: ${incident_type}`;
+    const message = `Your incident report "${incident_type}" has been ${status}. ${status === 'resolved' ? 'Thank you for your report. The issue has been successfully resolved.' : 'Your incident report has been closed.'}`;
+    
+    return await this.createNotificationForUser(userId, {
+      type: 'system',
+      title: title,
+      message: message,
+      severity: severity,
+      relatedId: incident_id
+    });
+  }
+
   // Get user's notification preferences (simplified like admin system)
   static async getUserNotificationSettings(userId) {
     // Return default settings for now (like admin system)

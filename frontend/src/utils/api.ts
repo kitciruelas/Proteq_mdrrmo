@@ -146,21 +146,71 @@ export const apiFormRequest = async <T = any>(
 ): Promise<T> => {
   const url = `${API_BASE_URL}${endpoint}`;
   const headers: HeadersInit = {};
-  const token = ((): string | null => {
-    const userInfo = localStorage.getItem('userInfo');
-    if (userInfo) {
-      try { return JSON.parse(userInfo)?.token ?? null; } catch { return null; }
-    }
-    return localStorage.getItem('adminToken');
-  })();
+  const token = getAuthToken();
   if (token) headers['Authorization'] = `Bearer ${token}`;
+  
   const config: RequestInit = { method: 'POST', body: formData, headers, ...options };
-  const response = await fetch(url, config);
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+  
+  console.log(`API Form Request: POST ${url}`);
+  
+  try {
+    const response = await fetch(url, config);
+    
+    // Handle 401 Unauthorized and 403 Forbidden responses (token issues)
+    if (response.status === 401 || (response.status === 403 && !endpoint.includes('/routing/'))) {
+      console.warn(`Authentication error (${response.status}) for ${endpoint}`);
+      
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch {
+        errorData = { message: 'Authentication failed' };
+      }
+
+      clearAuthDataOnError();
+      throw new Error(errorData.message || 'Authentication failed. Please log in again.');
+    }
+    
+    if (!response.ok) {
+      let errorMessage = `HTTP error! status: ${response.status}`;
+      let errorData;
+
+      try {
+        errorData = await response.json();
+        if (errorData.message) {
+          errorMessage = errorData.message;
+        } else if (errorData.error) {
+          errorMessage = errorData.error;
+        }
+      } catch (parseError) {
+        errorMessage = response.statusText || errorMessage;
+      }
+
+      console.error(`API Form Error for ${endpoint}:`, {
+        status: response.status,
+        statusText: response.statusText,
+        errorData,
+        url
+      });
+
+      throw new Error(errorMessage);
+    }
+    
+    const responseData = await response.json();
+    console.log(`API Form Success for ${endpoint}:`, responseData.success !== undefined ? responseData.success : 'No success field');
+    return responseData;
+  } catch (error) {
+    console.error(`API form request failed for ${endpoint}:`, error);
+
+    if (error instanceof Error) {
+      if (error.message.includes('Authentication') || error.message.includes('token')) {
+        throw new Error(`Authentication error: ${error.message}`);
+      }
+      throw error;
+    }
+
+    throw new Error(`Unknown error occurred: ${String(error)}`);
   }
-  return response.json();
 };
 
 // Generic API request function with enhanced error handling
@@ -838,6 +888,29 @@ export const incidentsApi = {
       body: JSON.stringify({ teamId }),
     });
   },
+  assignTeamsToIncident: async (incidentId: number, teamIds: number[]) => {
+    return apiRequest<{ 
+      success: boolean; 
+      message: string; 
+      emailSent?: boolean; 
+      emailDetails?: {
+        totalTeams: number;
+        totalEmailsSent: number;
+        totalEmailsFailed: number;
+        teamDetails: Array<{
+          teamName: string;
+          totalMembers: number;
+          emailsSent: number;
+          emailsFailed: number;
+          failedEmails?: string[];
+          error?: string;
+        }>;
+      }
+    }>(`/incidents/${incidentId}/assign-teams`, {
+      method: 'PUT',
+      body: JSON.stringify({ teamIds }),
+    });
+  },
   assignStaffToIncident: async (incidentId: number, staffId: number | null) => {
     return apiRequest<{ success: boolean; message: string; emailSent?: boolean; emailDetails?: any }>(`/incidents/${incidentId}/assign-staff`, {
       method: 'PUT',
@@ -871,7 +944,7 @@ export const profileApi = {
         department?: string;
         position?: string;
         employeeId?: string;
-        profilePicture?: string;
+        profile_picture?: string;
         createdAt: string;
         updatedAt: string;
       };
@@ -902,7 +975,7 @@ export const profileApi = {
         city?: string;
         state?: string;
         zipCode?: string;
-        profilePicture?: string;
+        profile_picture?: string;
         createdAt: string;
         updatedAt: string;
       };
@@ -920,6 +993,55 @@ export const profileApi = {
     }>('/profile/change-password', {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  },
+
+  // Upload profile picture
+  uploadProfilePicture: async (file: File) => {
+    const form = new FormData();
+    form.append('profilePicture', file);
+    return apiFormRequest<{
+      success: boolean;
+      message: string;
+      user: {
+        userId: number;
+        firstName: string;
+        lastName: string;
+        email: string;
+        phone?: string;
+        address?: string;
+        city?: string;
+        state?: string;
+        zipCode?: string;
+        profile_picture?: string;
+        createdAt: string;
+        updatedAt: string;
+      };
+      profilePicture: string;
+    }>('/profile/upload-picture', form);
+  },
+
+  // Delete profile picture
+  deleteProfilePicture: async () => {
+    return apiRequest<{
+      success: boolean;
+      message: string;
+      user: {
+        userId: number;
+        firstName: string;
+        lastName: string;
+        email: string;
+        phone?: string;
+        address?: string;
+        city?: string;
+        state?: string;
+        zipCode?: string;
+        profile_picture?: string;
+        createdAt: string;
+        updatedAt: string;
+      };
+    }>('/profile/delete-picture', {
+      method: 'DELETE',
     });
   },
 };
@@ -991,11 +1113,28 @@ export const publicApi = {
     return apiRequest<{
       success: boolean;
       stats: {
-        responders: number;
-        evacuationCenters: number;
-        residentsCovered: number;
-        totalIncidents: number;
+        users: {
+          total: number;
+        };
+        staff: {
+          total: number;
+        };
+        admins: {
+          total: number;
+        };
+        incidents: {
+          total: number;
+          active: number;
+          resolved: number;
+        };
+        evacuation_centers: {
+          total: number;
+        };
+        alerts: {
+          active: number;
+        };
       };
+      last_updated: string;
     }>('/public/stats');
   },
 

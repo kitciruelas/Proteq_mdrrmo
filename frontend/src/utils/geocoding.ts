@@ -41,12 +41,13 @@ interface ReverseGeocodeResponse {
  */
 export async function reverseGeocode(latitude: number, longitude: number): Promise<ReverseGeocodeResponse> {
   try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`;
+    // Use backend proxy to avoid CORS issues
+    const url = `/api/public/geocode?lat=${latitude}&lon=${longitude}`;
 
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'User-Agent': 'ProteQ-Emergency-Management/1.0'
+        'Content-Type': 'application/json'
       }
     });
 
@@ -54,68 +55,28 @@ export async function reverseGeocode(latitude: number, longitude: number): Promi
       throw new Error(`Geocoding API error: ${response.status}`);
     }
 
-    const data: GeocodeResult = await response.json();
+    const data = await response.json();
 
-    if (!data || !data.display_name) {
+    if (!data.success || !data.display_name) {
       return {
         success: false,
         locationName: 'Unknown Location',
-        error: 'No location data found'
+        error: data.message || 'No location data found'
       };
     }
 
-    // Extract the most relevant location name with barangay information
-    let locationName = 'Unknown Location';
-    let detailedInfo: DetailedLocationInfo | undefined;
-
-    if (data.address) {
-      // Extract barangay/subdivision information
-      const barangay = data.address.suburb || data.address.neighbourhood || data.address.hamlet || data.address.locality;
-
-      // Extract municipality/city information
-      const municipality = data.address.city || data.address.town || data.address.village || data.address.municipality;
-
-      // Extract province/state information
-      const province = data.address.state || data.address.county;
-
-      // Extract country information
-      const country = data.address.country;
-
-      // Build location name with barangay if available
-      if (barangay && municipality && province) {
-        locationName = `Barangay ${barangay}, ${municipality}, ${province}`;
-      } else if (barangay && municipality) {
-        locationName = `Barangay ${barangay}, ${municipality}`;
-      } else if (municipality && province) {
-        locationName = `${municipality}, ${province}`;
-      } else if (municipality) {
-        locationName = municipality;
-      } else if (province) {
-        locationName = province;
-      } else {
-        // Fallback to display_name but clean it up
-        locationName = data.display_name.split(',')[0] || data.display_name;
+    // The backend proxy already processes the location name
+    const locationName = data.display_name;
+    const detailedInfo: DetailedLocationInfo | undefined = data.detailed_info ? {
+      barangay: data.detailed_info.barangay,
+      municipality: data.detailed_info.municipality,
+      province: data.detailed_info.province,
+      region: data.detailed_info.region,
+      coordinates: {
+        latitude: data.detailed_info.coordinates.latitude,
+        longitude: data.detailed_info.coordinates.longitude
       }
-
-      // Add country if it's not Philippines (to avoid redundancy)
-      if (country && country !== 'Philippines' && !locationName.includes(country)) {
-        locationName += `, ${country}`;
-      }
-
-      // Create detailed info object
-      detailedInfo = {
-        barangay: barangay,
-        municipality: municipality || 'Unknown',
-        province: province || 'Unknown',
-        coordinates: {
-          latitude,
-          longitude
-        }
-      };
-    } else {
-      // Fallback to display_name
-      locationName = data.display_name.split(',')[0] || data.display_name;
-    }
+    } : undefined;
 
     return {
       success: true,

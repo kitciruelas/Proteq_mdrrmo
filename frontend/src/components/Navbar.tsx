@@ -8,6 +8,7 @@ import { userAuthApi } from "../utils/api"
 import { notificationsApi } from "../types/notifications"
 import LogoutModal from "./LogoutModal"
 import AlertModal from "./AlertModal"
+import Avatar from "./base/Avatar"
 
 interface NavbarProps {
   isAuthenticated?: boolean
@@ -147,6 +148,8 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
       }
     } catch (error) {
       console.error('Failed to fetch notifications:', error);
+      // Set empty notifications on error to prevent UI issues
+      setNotifications([]);
     }
   };
 
@@ -159,14 +162,29 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
   };
 
   // Mark notification as read (like AdminLayout)
-  const markAsRead = (notificationId: number) => {
-    setReadNotifications(prev => new Set([...prev, notificationId]));
+  const markAsRead = async (notificationId: number) => {
+    try {
+      await notificationsApi.markAsRead(notificationId);
+      setReadNotifications(prev => new Set([...prev, notificationId]));
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error);
+      // Still update local state even if API call fails
+      setReadNotifications(prev => new Set([...prev, notificationId]));
+    }
   };
 
   // Mark all notifications as read (like AdminLayout)
-  const markAllAsRead = () => {
-    const allIds = notifications.map(notif => notif.id);
-    setReadNotifications(new Set(allIds));
+  const markAllAsRead = async () => {
+    try {
+      await notificationsApi.markAllAsRead();
+      const allIds = notifications.map(notif => notif.id);
+      setReadNotifications(new Set(allIds));
+    } catch (error) {
+      console.error('Failed to mark all notifications as read:', error);
+      // Still update local state even if API call fails
+      const allIds = notifications.map(notif => notif.id);
+      setReadNotifications(new Set(allIds));
+    }
   };
 
   // Get unread notifications count (like AdminLayout)
@@ -268,20 +286,40 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
             {/* Logo */}
             <div className="flex items-center min-w-0 flex-shrink-0">
               <img
-                src="/images/partners/MDRRMO.png"
+                src="/images/soterblue.png"
                 alt="Logo"
-                className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg shadow-md object-contain flex-shrink-0"
+                className="w-[130px] h-[130px] sm:w-[160px] sm:h-[160px] lg:w-[200px] lg:h-[200px] object-contain flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity duration-200"
+                onClick={() => {
+                  if (window.location.pathname === "/") {
+                    // If already on home page, scroll to hero section
+                    const heroSection = document.getElementById("hero-section")
+                    if (heroSection) {
+                      heroSection.scrollIntoView({ behavior: "smooth" })
+                    }
+                  } else {
+                    // If on other page, navigate to home
+                    handleNavigation("/")
+                  }
+                }}
               />
-              <div className="ml-2 sm:ml-3 min-w-0">
-                <span className="text-lg sm:text-xl font-bold text-gray-900 truncate block">ProteQ</span>
-                <span className="hidden sm:block text-xs sm:text-sm text-gray-600 truncate">Rosario, Batangas</span>
-              </div>
+              
             </div>
 
             {/* Desktop Navigation */}
             <div className="hidden lg:flex items-center space-x-4 xl:space-x-6">
               <button
-                onClick={() => handleNavigation("/")}
+                onClick={() => {
+                  if (window.location.pathname === "/") {
+                    // If already on home page, scroll to hero section
+                    const heroSection = document.getElementById("hero-section")
+                    if (heroSection) {
+                      heroSection.scrollIntoView({ behavior: "smooth" })
+                    }
+                  } else {
+                    // If on other page, navigate to home
+                    handleNavigation("/")
+                  }
+                }}
                 className="text-gray-700 hover:text-blue-600 transition-colors font-medium text-sm xl:text-base whitespace-nowrap"
               >
                 Home
@@ -290,13 +328,13 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                 onClick={() => handleNavigation("/evacuation-center")}
                 className="text-gray-700 hover:text-blue-600 transition-colors font-medium text-sm xl:text-base whitespace-nowrap"
               >
-                Evacuation Centers
+               Evacuation Centers
               </button>
               <button
                 onClick={() => handleNavigation("/incident-report")}
                 className="text-gray-700 hover:text-blue-600 transition-colors font-medium text-sm xl:text-base whitespace-nowrap"
               >
-                Report Incident
+                Report
               </button>
               <button
                 onClick={() => {
@@ -351,9 +389,9 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                             <h3 className="font-semibold text-gray-900">Notifications</h3>
                             {unreadCount > 0 && (
                               <button
-                                onClick={(e) => {
+                                onClick={async (e) => {
                                   e.stopPropagation(); // Prevent dropdown click
-                                  markAllAsRead();
+                                  await markAllAsRead();
                                 }}
                                 className="text-sm text-blue-600 hover:text-blue-700 font-medium"
                               >
@@ -377,10 +415,10 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                               return (
                                 <div
                                   key={notification.id}
-                                  onClick={(e) => {
+                                  onClick={async (e) => {
                                     e.stopPropagation(); // Prevent dropdown click
                                     if (!isRead) {
-                                      markAsRead(notification.id);
+                                      await markAsRead(notification.id);
                                     }
                                     
                                     // Navigate based on notification type
@@ -394,6 +432,9 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                                     } else if (notification.type === 'welfare') {
                                       closeNotificationDropdown();
                                       handleNavigation("/welfare-check");
+                                    } else if (notification.type === 'system') {
+                                      closeNotificationDropdown();
+                                      handleNavigation("/history-report");
                                     }
                                   }}
                                   className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
@@ -435,13 +476,19 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                     onClick={toggleProfileDropdown}
                     className="flex items-center space-x-2 lg:space-x-3 px-2 lg:px-3 py-2 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 font-medium focus:outline-none group min-w-0"
                   >
-                    <div className="w-8 h-8 lg:w-9 lg:h-9 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-sm flex-shrink-0">
-                      <span className="text-white font-semibold text-xs lg:text-sm">
-                        {(userData?.firstName || userData?.first_name)?.charAt(0)?.toUpperCase() ||
-                          userData?.email?.charAt(0)?.toUpperCase() ||
-                          "U"}
-                      </span>
-                    </div>
+                    <Avatar
+                      name={
+                        userData?.firstName && userData?.lastName
+                          ? `${userData.firstName} ${userData.lastName}`
+                          : userData?.first_name && userData?.last_name
+                          ? `${userData.first_name} ${userData.last_name}`
+                          : undefined
+                      }
+                      email={userData?.email}
+                      profilePicture={userData?.profile_picture}
+                      size="md"
+                      className="flex-shrink-0"
+                    />
                     <div className="hidden lg:block text-left min-w-0 flex-1">
                       <p className="text-sm font-medium text-gray-900 group-hover:text-blue-600 truncate max-w-32">
                         {(userData?.firstName || userData?.first_name) && (userData?.lastName || userData?.last_name)
@@ -461,13 +508,19 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                       {/* User Info Header */}
                       <div className="px-4 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-gray-200 rounded-t-lg">
                         <div className="flex items-center space-x-3">
-                          <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-md flex-shrink-0">
-                            <span className="text-white font-semibold text-lg sm:text-xl">
-                              {(userData?.firstName || userData?.first_name)?.charAt(0)?.toUpperCase() ||
-                                userData?.email?.charAt(0)?.toUpperCase() ||
-                                "U"}
-                            </span>
-                          </div>
+                          <Avatar
+                            name={
+                              userData?.firstName && userData?.lastName
+                                ? `${userData.firstName} ${userData.lastName}`
+                                : userData?.first_name && userData?.last_name
+                                ? `${userData.first_name} ${userData.last_name}`
+                                : undefined
+                            }
+                            email={userData?.email}
+                            profilePicture={userData?.profile_picture}
+                            size="lg"
+                            className="flex-shrink-0"
+                          />
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold text-gray-900 text-sm sm:text-base truncate">
                               {(userData?.firstName || userData?.first_name) &&
@@ -622,10 +675,10 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                               return (
                                 <div
                                   key={notification.id}
-                                  onClick={(e) => {
+                                  onClick={async (e) => {
                                     e.stopPropagation(); // Prevent dropdown click
                                     if (!isRead) {
-                                      markAsRead(notification.id);
+                                      await markAsRead(notification.id);
                                     }
                                     
                                     // Navigate based on notification type
@@ -639,6 +692,9 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                                     } else if (notification.type === 'welfare') {
                                       closeNotificationDropdown();
                                       handleNavigation("/welfare-check");
+                                    } else if (notification.type === 'system') {
+                                      closeNotificationDropdown();
+                                      handleNavigation("/history-report");
                                     }
                                   }}
                                   className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
@@ -694,7 +750,20 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
           <div className="fixed top-16 left-0 right-0 bg-white shadow-xl border-t border-gray-200 max-h-[calc(100vh-4rem)] overflow-y-auto">
             <div className="px-4 sm:px-6 py-4 sm:py-6 space-y-2">
               <button
-                onClick={() => handleNavigation("/")}
+                onClick={() => {
+                  if (window.location.pathname === "/") {
+                    // If already on home page, scroll to hero section
+                    const heroSection = document.getElementById("hero-section")
+                    if (heroSection) {
+                      heroSection.scrollIntoView({ behavior: "smooth" })
+                    }
+                    // Close mobile menu
+                    closeMobileMenu()
+                  } else {
+                    // If on other page, navigate to home
+                    handleNavigation("/")
+                  }
+                }}
                 className="flex items-center w-full px-3 sm:px-4 py-3 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 font-medium"
               >
                 <i className="ri-home-line text-lg mr-3 flex-shrink-0"></i>
@@ -705,14 +774,14 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                 className="flex items-center w-full px-3 sm:px-4 py-3 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 font-medium"
               >
                 <i className="ri-building-2-line text-lg mr-3 flex-shrink-0"></i>
-                <span className="text-sm sm:text-base">Evacuation Centers</span>
+                <span className="text-sm sm:text-base">Centers</span>
               </button>
               <button
                 onClick={() => handleNavigation("/incident-report")}
                 className="flex items-center w-full px-3 sm:px-4 py-3 rounded-lg text-gray-700 hover:text-blue-600 hover:bg-blue-50 transition-all duration-200 font-medium"
               >
                 <i className="ri-error-warning-line text-lg mr-3 flex-shrink-0"></i>
-                <span className="text-sm sm:text-base">Report Incident</span>
+                <span className="text-sm sm:text-base">Report</span>
               </button>
               <button
                 onClick={() => {
@@ -743,13 +812,19 @@ const Navbar: React.FC<NavbarProps> = ({ isAuthenticated: propIsAuthenticated, u
                   {/* Mobile User Info Card */}
                   <div className="px-3 sm:px-4 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
                     <div className="flex items-center space-x-3">
-                      <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-md flex-shrink-0">
-                        <span className="text-white font-semibold text-lg sm:text-xl">
-                          {(userData?.firstName || userData?.first_name)?.charAt(0)?.toUpperCase() ||
-                            userData?.email?.charAt(0)?.toUpperCase() ||
-                            "U"}
-                        </span>
-                      </div>
+                      <Avatar
+                        name={
+                          userData?.firstName && userData?.lastName
+                            ? `${userData.firstName} ${userData.lastName}`
+                            : userData?.first_name && userData?.last_name
+                            ? `${userData.first_name} ${userData.last_name}`
+                            : undefined
+                        }
+                        email={userData?.email}
+                        profilePicture={userData?.profile_picture}
+                        size="lg"
+                        className="flex-shrink-0"
+                      />
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-gray-900 text-sm sm:text-base truncate">
                           {( userData?.first_name) && (userData?.last_name)

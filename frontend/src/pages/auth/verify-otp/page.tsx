@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import Button from '../../../components/base/Button';
 import Input from '../../../components/base/Input';
 import useForm from '../../../hooks/useForm';
+import Navbar from '../../../components/Navbar';
 
 interface VerifyOTPFormData {
   otp: string;
@@ -113,7 +114,9 @@ export default function VerifyOTPPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center px-4 py-8">
+    <>
+      <Navbar />
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
@@ -211,5 +214,6 @@ export default function VerifyOTPPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }

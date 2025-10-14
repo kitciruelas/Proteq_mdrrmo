@@ -321,4 +321,66 @@ router.put('/settings', authenticateAny, async (req, res) => {
   }
 });
 
+// Create notification for incident report validation
+router.post('/incident-validation', authenticateAny, async (req, res) => {
+  try {
+    const { incidentData, validationStatus, userId } = req.body;
+
+    if (!incidentData || !validationStatus || !userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: incidentData, validationStatus, userId'
+      });
+    }
+
+    if (!['validated', 'rejected'].includes(validationStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid validation status. Must be "validated" or "rejected"'
+      });
+    }
+
+    try {
+      const notificationId = await NotificationService.createIncidentValidationNotification(
+        incidentData,
+        validationStatus,
+        userId
+      );
+
+      res.json({
+        success: true,
+        message: 'Notification created successfully',
+        notificationId: notificationId
+      });
+    } catch (tableError) {
+      if (tableError.code === 'ER_NO_SUCH_TABLE') {
+        // Table doesn't exist yet, create it and try again
+        await NotificationService.createNotificationsTable();
+        
+        const notificationId = await NotificationService.createIncidentValidationNotification(
+          incidentData,
+          validationStatus,
+          userId
+        );
+
+        res.json({
+          success: true,
+          message: 'Notification created successfully',
+          notificationId: notificationId
+        });
+      } else {
+        throw tableError;
+      }
+    }
+
+  } catch (error) {
+    console.error('Error creating incident validation notification:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create notification',
+      error: error.message
+    });
+  }
+});
+
 module.exports = router;

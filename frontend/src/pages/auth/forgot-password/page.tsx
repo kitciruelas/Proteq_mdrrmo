@@ -6,6 +6,7 @@ import { Link, useNavigate } from "react-router-dom"
 import Button from "../../../components/base/Button"
 import Input from "../../../components/base/Input"
 import useForm from "../../../hooks/useForm"
+import Navbar from "../../../components/Navbar"
 
 interface ForgotPasswordFormData {
   email: string
@@ -102,7 +103,9 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-pink-50 flex items-center justify-center px-4 py-8 relative overflow-hidden">
+    <>
+      <Navbar />
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-pink-50 flex items-center justify-center px-4 py-8 relative overflow-hidden">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -left-40 w-80 h-80 bg-gradient-to-br from-purple-200/30 to-pink-200/30 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute -bottom-40 -right-40 w-80 h-80 bg-gradient-to-br from-blue-200/30 to-purple-200/30 rounded-full blur-3xl animate-pulse delay-1000"></div>
@@ -250,5 +253,6 @@ export default function ForgotPasswordPage() {
         </div>
       </div>
     </div>
+    </>
   )
 }

@@ -8,6 +8,9 @@ import Input from "../../../components/base/Input"
 import Checkbox from "../../../components/base/Checkbox"
 import useForm from "../../../hooks/useForm"
 import { apiRequest } from "../../../utils/api"
+import PrivacyPolicyModal from "../../../components/PrivacyPolicyModal"
+import TermsOfServiceModal from "../../../components/TermsOfServiceModal"
+import Navbar from "../../../components/Navbar"
 
 interface SignupFormData {
   firstName: string
@@ -148,7 +151,9 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center px-4 py-8 relative overflow-hidden">
+    <>
+      <Navbar />
+      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex items-center justify-center px-4 py-8 relative overflow-hidden">
       {/* Floating background illustrations */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-green-200/30 to-emerald-300/20 rounded-full blur-3xl animate-pulse"></div>
@@ -389,6 +394,17 @@ export default function SignupPage() {
         </div>
 
       </div>
+
+      {/* Modals */}
+      <TermsOfServiceModal 
+        isOpen={showTermsModal} 
+        onClose={() => setShowTermsModal(false)} 
+      />
+      <PrivacyPolicyModal 
+        isOpen={showPrivacyModal} 
+        onClose={() => setShowPrivacyModal(false)} 
+      />
     </div>
+    </>
   )
 }

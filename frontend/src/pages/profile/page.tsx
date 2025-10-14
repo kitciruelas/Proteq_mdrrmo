@@ -131,6 +131,10 @@ export default function ProfilePage() {
     confirmPassword: ''
   })
   const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const [isUploadingPicture, setIsUploadingPicture] = useState(false)
+  const [showPictureModal, setShowPictureModal] = useState(false)
+  const [picturePreview, setPicturePreview] = useState<string | null>(null)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
 
   useEffect(() => {
     const authState = getAuthState()
@@ -331,6 +335,120 @@ export default function ProfilePage() {
       newPassword: '',
       confirmPassword: ''
     })
+  }
+
+  const handlePictureModalOpen = () => {
+    setShowPictureModal(true)
+    setPicturePreview(null)
+    setSelectedFile(null)
+  }
+
+  const handlePictureModalClose = () => {
+    if (isUploadingPicture) return // Prevent closing while uploading
+
+    setShowPictureModal(false)
+    setPicturePreview(null)
+    setSelectedFile(null)
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Validate file type
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+      if (!allowedTypes.includes(file.type)) {
+        setErrorMessage('Please select a valid image file (JPEG, PNG, GIF, or WebP)')
+        setShowErrorMessage(true)
+        setTimeout(() => setShowErrorMessage(false), 5000)
+        return
+      }
+
+      // Validate file size (5MB limit)
+      if (file.size > 5 * 1024 * 1024) {
+        setErrorMessage('File size must be less than 5MB')
+        setShowErrorMessage(true)
+        setTimeout(() => setShowErrorMessage(false), 5000)
+        return
+      }
+
+      setSelectedFile(file)
+      
+      // Create preview
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setPicturePreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handlePictureUpload = async () => {
+    if (!selectedFile) return
+
+    setIsUploadingPicture(true)
+    setShowErrorMessage(false)
+    setShowSuccessMessage(false)
+
+    try {
+      const response = await profileApi.uploadProfilePicture(selectedFile)
+
+      if (response.success) {
+        const updatedUser = { ...userData, ...response.user }
+        setUserData(updatedUser)
+        updateUserData(updatedUser)
+
+        setShowSuccessMessage(true)
+        setTimeout(() => setShowSuccessMessage(false), 5000)
+        handlePictureModalClose()
+      } else {
+        setErrorMessage(response.message || 'Failed to upload profile picture')
+        setShowErrorMessage(true)
+        setTimeout(() => setShowErrorMessage(false), 5000)
+      }
+    } catch (error) {
+      console.error('Profile picture upload failed:', error)
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to upload profile picture. Please try again.')
+      setShowErrorMessage(true)
+      setTimeout(() => setShowErrorMessage(false), 5000)
+    } finally {
+      setIsUploadingPicture(false)
+    }
+  }
+
+  const handlePictureDelete = async () => {
+    if (!userData.profile_picture) return
+
+    if (!window.confirm('Are you sure you want to delete your profile picture?')) {
+      return
+    }
+
+    setIsUploadingPicture(true)
+    setShowErrorMessage(false)
+    setShowSuccessMessage(false)
+
+    try {
+      const response = await profileApi.deleteProfilePicture()
+
+      if (response.success) {
+        const updatedUser = { ...userData, ...response.user }
+        setUserData(updatedUser)
+        updateUserData(updatedUser)
+
+        setShowSuccessMessage(true)
+        setTimeout(() => setShowSuccessMessage(false), 5000)
+      } else {
+        setErrorMessage(response.message || 'Failed to delete profile picture')
+        setShowErrorMessage(true)
+        setTimeout(() => setShowErrorMessage(false), 5000)
+      }
+    } catch (error) {
+      console.error('Profile picture deletion failed:', error)
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to delete profile picture. Please try again.')
+      setShowErrorMessage(true)
+      setTimeout(() => setShowErrorMessage(false), 5000)
+    } finally {
+      setIsUploadingPicture(false)
+    }
   }
 
   const { fields, setValue, validateAll, getValues, isSubmitting, setIsSubmitting } = useForm<ProfileFormData>(
@@ -574,8 +692,10 @@ export default function ProfilePage() {
                           : undefined
                       }
                       email={userData?.email}
+                      profilePicture={userData?.profile_picture}
                       size="xl"
                       className="mx-auto"
+                      onClick={handlePictureModalOpen}
                     />
                   </div>
                   <h3 className="text-xl font-bold text-gray-900 mb-1">
@@ -861,6 +981,50 @@ export default function ProfilePage() {
                       )}
                     </div>
 
+                    {/* Profile Picture Section */}
+                    <div className="border-t border-gray-100 pt-8">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                          <i className="ri-image-line text-purple-600"></i>
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900">Profile Picture</h3>
+                      </div>
+
+                      <div className="bg-gray-50 rounded-lg p-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <h4 className="font-medium text-gray-900">Update Profile Picture</h4>
+                            <p className="text-sm text-gray-600">Upload a new profile picture or remove the current one</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="md"
+                              onClick={handlePictureModalOpen}
+                              className="border-purple-200 text-purple-600 hover:bg-purple-50"
+                            >
+                              <i className="ri-upload-line mr-2"></i>
+                              {userData?.profile_picture ? 'Change Picture' : 'Upload Picture'}
+                            </Button>
+                            {userData?.profile_picture && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="md"
+                                onClick={handlePictureDelete}
+                                disabled={isUploadingPicture}
+                                className="border-red-200 text-red-600 hover:bg-red-50"
+                              >
+                                <i className="ri-delete-bin-line mr-2"></i>
+                                Remove
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Security Section */}
                     <div className="border-t border-gray-100 pt-8">
                       <div className="flex items-center gap-3 mb-6">
@@ -1028,6 +1192,103 @@ export default function ProfilePage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Profile Picture Upload Modal */}
+      <Modal
+        isOpen={showPictureModal}
+        onClose={handlePictureModalClose}
+        title="Update Profile Picture"
+        size="md"
+      >
+        <div className="space-y-6">
+          {/* File Input */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Select Image
+            </label>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              onChange={handleFileSelect}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+              disabled={isUploadingPicture}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Supported formats: JPEG, PNG, GIF, WebP. Max size: 5MB
+            </p>
+          </div>
+
+          {/* Preview */}
+          {picturePreview && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Preview
+              </label>
+              <div className="flex justify-center">
+                <img
+                  src={picturePreview}
+                  alt="Preview"
+                  className="w-32 h-32 object-cover rounded-full border-4 border-gray-200"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Current Picture Info */}
+          {userData?.profile_picture && !picturePreview && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Current Picture
+              </label>
+              <div className="flex justify-center">
+                <img
+                  src={userData.profile_picture.startsWith('http') 
+                    ? userData.profile_picture 
+                    : `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}${userData.profile_picture}`
+                  }
+                  alt="Current profile"
+                  className="w-32 h-32 object-cover rounded-full border-4 border-gray-200"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none'
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+            <Button
+              type="button"
+              variant="outline"
+              size="md"
+              onClick={handlePictureModalClose}
+              disabled={isUploadingPicture}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="md"
+              onClick={handlePictureUpload}
+              disabled={!selectedFile || isUploadingPicture}
+            >
+              {isUploadingPicture ? (
+                <>
+                  <i className="ri-loader-4-line animate-spin mr-2"></i>
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <i className="ri-upload-line mr-2"></i>
+                  Upload Picture
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       {/* Logout Confirmation Modal */}

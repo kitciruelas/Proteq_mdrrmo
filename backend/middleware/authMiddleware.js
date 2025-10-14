@@ -6,8 +6,14 @@ const pool = require('../config/conn');
 const authenticateUser = async (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
+        
+        console.log('AuthenticateUser middleware called');
+        console.log('Authorization header:', authHeader);
+        console.log('Request URL:', req.originalUrl);
+        console.log('Request method:', req.method);
 
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            console.log('No valid authorization header found');
             return res.status(401).json({
                 success: false,
                 message: 'Access token required'
@@ -15,6 +21,7 @@ const authenticateUser = async (req, res, next) => {
         }
 
         const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+        console.log('Token extracted:', token.substring(0, 20) + '...');
 
         if (!process.env.JWT_SECRET) {
             console.error('JWT_SECRET environment variable is not set');
@@ -23,7 +30,10 @@ const authenticateUser = async (req, res, next) => {
                 message: 'Server configuration error'
             });
         }
+        
+        console.log('Verifying JWT token...');
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        console.log('Token decoded successfully:', { id: decoded.id, type: decoded.type });
 
         // Check if token is for user type
         if (decoded.type !== 'user') {
@@ -34,12 +44,15 @@ const authenticateUser = async (req, res, next) => {
         }
 
         // Get user details from database
+        console.log('Querying database for user ID:', decoded.id);
         const [users] = await pool.execute(
             'SELECT * FROM general_users WHERE user_id = ? AND status = 1',
             [decoded.id]
         );
+        console.log('Database query result:', users.length, 'users found');
 
         if (users.length === 0) {
+            console.log('No users found in database');
             return res.status(401).json({
                 success: false,
                 message: 'User not found or inactive'
@@ -48,12 +61,16 @@ const authenticateUser = async (req, res, next) => {
 
         // Attach user to request object
         req.user = users[0];
+        console.log('User authenticated successfully:', req.user.user_id);
         next();
 
     } catch (error) {
         console.error('User authentication error:', error);
+        console.error('Error name:', error.name);
+        console.error('Error message:', error.message);
 
         if (error.name === 'JsonWebTokenError') {
+            console.log('JWT verification failed - invalid token');
             return res.status(401).json({
                 success: false,
                 message: 'Invalid token'
@@ -61,12 +78,14 @@ const authenticateUser = async (req, res, next) => {
         }
 
         if (error.name === 'TokenExpiredError') {
+            console.log('JWT verification failed - token expired');
             return res.status(401).json({
                 success: false,
                 message: 'Token expired'
             });
         }
 
+        console.log('Other authentication error occurred');
         res.status(500).json({
             success: false,
             message: 'Authentication error'

@@ -1,4 +1,5 @@
 const express = require('express');
+const https = require('https');
 const router = express.Router();
 
 // Public routes that don't require authentication
@@ -196,6 +197,126 @@ router.get('/testimonials', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to fetch testimonials',
+            error: error.message
+        });
+    }
+});
+
+// Geocoding proxy endpoint to avoid CORS issues
+router.get('/geocode', async (req, res) => {
+    try {
+        const { lat, lon } = req.query;
+
+        if (!lat || !lon) {
+            return res.status(400).json({
+                success: false,
+                message: 'Latitude and longitude are required'
+            });
+        }
+
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`;
+
+        const options = {
+            headers: {
+                'User-Agent': 'ProteQ-Emergency-Management/1.0'
+            }
+        };
+
+        https.get(url, options, (response) => {
+            let data = '';
+
+            response.on('data', (chunk) => {
+                data += chunk;
+            });
+
+            response.on('end', () => {
+                try {
+                    const result = JSON.parse(data);
+                    
+                    if (!result || !result.display_name) {
+                        return res.json({
+                            success: false,
+                            message: 'No location data found',
+                            display_name: 'Unknown Location'
+                        });
+                    }
+
+                    // Extract location details
+                    let locationName = 'Unknown Location';
+                    let detailedInfo = {};
+
+                    if (result.address) {
+                        const barangay = result.address.suburb || result.address.neighbourhood || result.address.hamlet || result.address.locality;
+                        const municipality = result.address.city || result.address.town || result.address.village || result.address.municipality;
+                        const province = result.address.state || result.address.county;
+                        const country = result.address.country;
+
+                        // Build location name with barangay if available
+                        if (barangay && municipality && province) {
+                            locationName = `Barangay ${barangay}, ${municipality}, ${province}`;
+                        } else if (barangay && municipality) {
+                            locationName = `Barangay ${barangay}, ${municipality}`;
+                        } else if (municipality && province) {
+                            locationName = `${municipality}, ${province}`;
+                        } else if (municipality) {
+                            locationName = municipality;
+                        } else if (province) {
+                            locationName = province;
+                        } else {
+                            locationName = result.display_name.split(',')[0] || result.display_name;
+                        }
+
+                        // Add country if it's not Philippines
+                        if (country && country !== 'Philippines' && !locationName.includes(country)) {
+                            locationName += `, ${country}`;
+                        }
+
+                        detailedInfo = {
+                            barangay: barangay,
+                            municipality: municipality || 'Unknown',
+                            province: province || 'Unknown',
+                            country: country || 'Unknown',
+                            coordinates: {
+                                latitude: parseFloat(lat),
+                                longitude: parseFloat(lon)
+                            }
+                        };
+                    } else {
+                        locationName = result.display_name.split(',')[0] || result.display_name;
+                    }
+
+                    res.json({
+                        success: true,
+                        display_name: locationName,
+                        original_display_name: result.display_name,
+                        address: result.address,
+                        detailed_info: detailedInfo
+                    });
+
+                } catch (parseError) {
+                    console.error('Error parsing geocoding response:', parseError);
+                    res.json({
+                        success: false,
+                        message: 'Failed to parse location data',
+                        display_name: 'Unknown Location'
+                    });
+                }
+            });
+
+        }).on('error', (error) => {
+            console.error('Geocoding request error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch location data',
+                error: error.message
+            });
+        });
+
+    } catch (error) {
+        console.error('Geocoding proxy error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Internal server error',
             error: error.message
         });
     }

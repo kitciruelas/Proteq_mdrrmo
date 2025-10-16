@@ -68,6 +68,10 @@ const ViewIncidentDetails: React.FC = () => {
     }
   };
 
+  const getIncidentTypeText = (incidentType: string) => {
+    return incidentType.toUpperCase();
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -140,7 +144,7 @@ const ViewIncidentDetails: React.FC = () => {
                 <div>
                   <h3 className="text-lg font-medium text-gray-900 mb-2">Incident Information</h3>
                   <div className="space-y-2">
-                    <p><strong>Type:</strong> {incident.incident_type}</p>
+                    <p><strong>Type:</strong> {getIncidentTypeText(incident.incident_type)}</p>
                     <p><strong>Priority:</strong> {incident.priority_level}</p>
                     <p><strong>Status:</strong> {incident.status}</p>
                     <p><strong>Validation:</strong> {incident.validation_status}</p>

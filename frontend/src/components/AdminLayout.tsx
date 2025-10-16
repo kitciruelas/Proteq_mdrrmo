@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import AdminSidebar from './AdminSidebar';
 import AdminAuthGuard from './AdminAuthGuard';
 import { getAuthState, clearAuthData } from '../utils/auth';
 import { adminAuthApi, incidentsApi } from '../utils/api';
 import { apiRequest } from '../utils/api';
+import websocketService, { type NotificationData } from '../services/websocketService';
 
 interface AdminLayoutProps {
   children?: React.ReactNode;
@@ -24,6 +25,9 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     const saved = localStorage.getItem('readNotifications');
     return saved ? new Set(JSON.parse(saved)) : new Set();
   });
+  const [wsConnectionStatus, setWsConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
+  const wsInitialized = useRef(false);
+  const [newNotificationCount, setNewNotificationCount] = useState(0);
 
   useEffect(() => {
     const authState = getAuthState();
@@ -44,9 +48,47 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     return () => window.removeEventListener('authStateChanged', handleAuthStateChange);
   }, []);
 
-  // Fetch notifications on mount
+  // Initialize WebSocket connection and fetch notifications on mount
   useEffect(() => {
+    const initializeWebSocket = async () => {
+      const authState = getAuthState();
+      if (authState.isAuthenticated && authState.userType === 'admin' && (authState as any).token && !wsInitialized.current) {
+        wsInitialized.current = true;
+        
+        // Request browser notification permission
+        if (Notification.permission === 'default') {
+          await Notification.requestPermission();
+        }
+        
+        try {
+          setWsConnectionStatus('connecting');
+          await websocketService.connect((authState as any).token);
+          setWsConnectionStatus('connected');
+          
+          // Set up real-time notification handlers
+          websocketService.on('new_incident', handleNewIncident);
+          websocketService.on('new_welfare_report', handleNewWelfareReport);
+          websocketService.on('incident_updated', handleIncidentUpdate);
+          websocketService.on('welfare_updated', handleWelfareUpdate);
+          
+          console.log('WebSocket connected for real-time notifications');
+        } catch (error) {
+          console.error('Failed to connect WebSocket:', error);
+          setWsConnectionStatus('disconnected');
+        }
+      }
+    };
+
+    initializeWebSocket();
     fetchNotifications();
+
+    // Cleanup WebSocket on unmount
+    return () => {
+      websocketService.off('new_incident', handleNewIncident);
+      websocketService.off('new_welfare_report', handleNewWelfareReport);
+      websocketService.off('incident_updated', handleIncidentUpdate);
+      websocketService.off('welfare_updated', handleWelfareUpdate);
+    };
   }, []);
 
   // Save read notifications to localStorage
@@ -61,8 +103,112 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       console.error('Logout API error:', error);
     } finally {
       clearAuthData();
+      websocketService.disconnect();
       navigate('/admin/login');
     }
+  };
+
+  // WebSocket event handlers for real-time notifications
+  const handleNewIncident = (incidentData: NotificationData) => {
+    console.log('New incident received via WebSocket:', incidentData);
+    
+    // Increment new notification counter
+    setNewNotificationCount(prev => prev + 1);
+    
+    // Add new incident to notifications list
+    setNotifications(prev => {
+      const newIncident = {
+        ...incidentData,
+        id: incidentData.id || (incidentData as any).incident_id,
+        date_reported: incidentData.date_reported || new Date().toISOString()
+      };
+      
+      // Check if incident already exists to avoid duplicates
+      const exists = prev.some(notif => 
+        (notif.id === newIncident.id || (notif as any).incident_id === newIncident.id)
+      );
+      
+      if (!exists) {
+        return [newIncident, ...prev].slice(0, 10); // Keep only latest 10
+      }
+      return prev;
+    });
+
+    // Show browser notification if permission granted
+    if (Notification.permission === 'granted') {
+      new Notification('New Incident Report', {
+        body: `${incidentData.incident_type || 'Incident'} reported at ${incidentData.location || 'Unknown location'}`,
+        icon: '/images/Slogo.png',
+        tag: `incident-${incidentData.id}`
+      });
+    }
+  };
+
+  const handleNewWelfareReport = (welfareData: NotificationData) => {
+    console.log('New welfare report received via WebSocket:', welfareData);
+    
+    // Increment new notification counter
+    setNewNotificationCount(prev => prev + 1);
+    
+    // Add new welfare report to welfare reports list
+    setWelfareReports(prev => {
+      const newWelfareReport = {
+        ...welfareData,
+        type: 'welfare',
+        id: `welfare_${welfareData.report_id || welfareData.id}`,
+        title: 'Welfare Check - Needs Help',
+        description: welfareData.additional_info || welfareData.description || 'User needs assistance',
+        date_reported: welfareData.submitted_at || welfareData.date_reported || new Date().toISOString(),
+        priority_level: 'high',
+        user_name: `${welfareData.first_name || ''} ${welfareData.last_name || ''}`.trim() || welfareData.user_name || 'Unknown User'
+      };
+      
+      // Check if welfare report already exists to avoid duplicates
+      const exists = prev.some(report => 
+        report.id === newWelfareReport.id || 
+        report.report_id === welfareData.report_id
+      );
+      
+      if (!exists) {
+        return [newWelfareReport, ...prev].slice(0, 5); // Keep only latest 5
+      }
+      return prev;
+    });
+
+    // Show browser notification if permission granted
+    if (Notification.permission === 'granted') {
+      new Notification('Welfare Check - Needs Help', {
+        body: `${welfareData.user_name || 'User'} needs assistance`,
+        icon: '/images/Slogo.png',
+        tag: `welfare-${welfareData.report_id || welfareData.id}`
+      });
+    }
+  };
+
+  const handleIncidentUpdate = (incidentData: NotificationData) => {
+    console.log('Incident updated via WebSocket:', incidentData);
+    
+    // Update existing incident in notifications list
+    setNotifications(prev => 
+      prev.map(notif => 
+        (notif.id === incidentData.id || notif.incident_id === incidentData.id) 
+          ? { ...notif, ...incidentData }
+          : notif
+      )
+    );
+  };
+
+  const handleWelfareUpdate = (welfareData: NotificationData) => {
+    console.log('Welfare report updated via WebSocket:', welfareData);
+    
+    // Update existing welfare report in welfare reports list
+    setWelfareReports(prev => 
+      prev.map(report => 
+        (report.id === `welfare_${welfareData.report_id}` || report.report_id === welfareData.report_id)
+          ? { ...report, ...welfareData }
+          : report
+      )
+    );
   };
 
   // Fetch notifications (incidents and welfare reports) for admin
@@ -120,6 +266,8 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     if (!showNotifDropdown) {
       // Always fetch notifications asynchronously when opening dropdown
       fetchNotifications();
+      // Reset new notification counter when opening dropdown
+      setNewNotificationCount(0);
     }
     setShowNotifDropdown(!showNotifDropdown);
   };
@@ -229,6 +377,11 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                       {unreadCount > 99 ? '99+' : unreadCount}
                     </span>
                   )}
+                  {newNotificationCount > 0 && (
+                    <div className="absolute -top-1 -left-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-bounce">
+                      <div className="w-full h-full bg-green-400 rounded-full animate-ping"></div>
+                    </div>
+                  )}
                   {priorityIncidentsCount > 0 && (
                     <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-orange-500 rounded-full border-2 border-white"></div>
                   )}
@@ -240,10 +393,33 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                     {/* Header with stats */}
                     <div className="p-4 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-xl">
                       <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-bold text-gray-900 text-lg flex items-center">
-                          <i className="ri-notification-3-line mr-2 text-blue-600"></i>
-                          Incident Alerts
-                        </h3>
+                        <div className="flex items-center">
+                          <h3 className="font-bold text-gray-900 text-lg flex items-center">
+                            <i className="ri-notification-3-line mr-2 text-blue-600"></i>
+                            Incident Alerts
+                          </h3>
+                          {/* WebSocket Connection Status */}
+                          <div className="ml-3 flex items-center">
+                            {wsConnectionStatus === 'connected' && (
+                              <div className="flex items-center text-green-600 text-xs">
+                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-1"></div>
+                                <span className="font-medium">Live</span>
+                              </div>
+                            )}
+                            {wsConnectionStatus === 'connecting' && (
+                              <div className="flex items-center text-yellow-600 text-xs">
+                                <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse mr-1"></div>
+                                <span className="font-medium">Connecting...</span>
+                              </div>
+                            )}
+                            {wsConnectionStatus === 'disconnected' && (
+                              <div className="flex items-center text-red-600 text-xs">
+                                <div className="w-2 h-2 bg-red-500 rounded-full mr-1"></div>
+                                <span className="font-medium">Offline</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                         <div className="flex items-center space-x-2">
                           <button
                             onClick={fetchNotifications}

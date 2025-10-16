@@ -4,6 +4,7 @@ import ExportPreviewModal from '../../../../components/base/ExportPreviewModal';
 import { ExportUtils } from '../../../../utils/exportUtils';
 import type { ExportColumn } from '../../../../utils/exportUtils';
 import { useToast } from '../../../../components/base/Toast';
+import IncidentMapModal from '../../../../components/IncidentMapModal';
 
 interface Incident {
   id: number;
@@ -56,7 +57,7 @@ const incidentExportColumns: ExportColumn[] = [
     label: 'Date Reported',
     format: (value: string) => value ? ExportUtils.formatDateTime(value) : ''
   },
-  { key: 'type', label: 'Type' },
+  { key: 'type', label: 'Type', format: (value: string) => value.toUpperCase() },
   {
     key: 'priorityLevel',
     label: 'Priority',
@@ -123,6 +124,7 @@ const ViewIncidents: React.FC = () => {
   const [isValidating, setIsValidating] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showExportPreview, setShowExportPreview] = useState(false);
+  const [showMapModal, setShowMapModal] = useState(false);
 
 
   // Helper function to check if assignment button should be disabled
@@ -585,8 +587,13 @@ const ViewIncidents: React.FC = () => {
     setIsAssigning(false);
   };
 
+  const getIncidentTypeText = (incidentType: string) => {
+    return incidentType.toUpperCase();
+  };
+
   const filteredIncidents = incidents.filter(incident => {
-    const matchesSearch = incident.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = getIncidentTypeText(incident.type).includes(searchTerm.toUpperCase()) ||
+                         incident.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          incident.location.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          incident.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || incident.status === statusFilter;
@@ -610,6 +617,21 @@ const ViewIncidents: React.FC = () => {
     })();
 
     return matchesSearch && matchesStatus && matchesPriority && matchesDateRange;
+  }).sort((a, b) => {
+    // Define status priority order
+    const statusOrder = { 'pending': 1, 'in_progress': 2, 'resolved': 3, 'closed': 4 };
+    const priorityOrder = { 'critical': 1, 'high': 2, 'medium': 3, 'low': 4 };
+    
+    // First sort by status
+    const statusDiff = statusOrder[a.status] - statusOrder[b.status];
+    if (statusDiff !== 0) return statusDiff;
+    
+    // Within same status, sort by priority (critical first)
+    const priorityDiff = priorityOrder[a.priorityLevel] - priorityOrder[b.priorityLevel];
+    if (priorityDiff !== 0) return priorityDiff;
+    
+    // Within same status and priority, sort by date (newest first)
+    return new Date(b.dateReported).getTime() - new Date(a.dateReported).getTime();
   });
 
   const getPriorityColor = (priority: Incident['priorityLevel']) => {
@@ -870,7 +892,7 @@ const ViewIncidents: React.FC = () => {
                 <div className="flex-1">
                   <div className="flex items-center space-x-3 mb-2">
                     <h4 className="text-lg font-medium text-gray-900">
-                      {incident.type} - #{incident.id}
+                      {getIncidentTypeText(incident.type)} - #{incident.id}
                     </h4>
                     <span className={`px-2 py-1 text-xs font-medium rounded-full border ${getPriorityColor(incident.priorityLevel)}`}>
                       {incident.priorityLevel.toUpperCase()}
@@ -1019,7 +1041,7 @@ const ViewIncidents: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Type</label>
-                  <p className="text-sm text-gray-900">{selectedIncident.type}</p>
+                  <p className="text-sm text-gray-900">{getIncidentTypeText(selectedIncident.type)}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Priority</label>
@@ -1338,7 +1360,10 @@ const ViewIncidents: React.FC = () => {
               >
                 Close
               </button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+              <button 
+                onClick={() => setShowMapModal(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
                 <i className="ri-map-pin-line mr-2"></i>
                 View on Map
               </button>
@@ -2031,6 +2056,13 @@ const ViewIncidents: React.FC = () => {
         data={filteredIncidents}
         columns={incidentExportColumns.map(col => ({ key: col.key, label: col.label }))}
         title={`Incidents Report (${filteredIncidents.length})`}
+      />
+
+      {/* Incident Map Modal */}
+      <IncidentMapModal
+        isOpen={showMapModal}
+        onClose={() => setShowMapModal(false)}
+        incident={selectedIncident}
       />
 
     </div>

@@ -118,7 +118,7 @@ const StaffManagement: React.FC = () => {
       });
 
       console.log('Fetching staff with params:', params.toString());
-      const response = await fetch(`http://localhost:5000/api/staff?${params}`);
+      const response = await fetch(`/api/staff?${params}`);
       const data = await response.json();
       
       console.log('Staff API response:', data);
@@ -143,7 +143,7 @@ const StaffManagement: React.FC = () => {
   const fetchTeams = async () => {
     try {
       console.log('Fetching teams...');
-      const response = await fetch('http://localhost:5000/api/teams');
+      const response = await fetch('/api/teams');
       const data = await response.json();
       
       console.log('Teams API response:', data);
@@ -183,7 +183,7 @@ const StaffManagement: React.FC = () => {
 
   const handleStatusChange = async (staffId: number, newStatus: Staff['status']) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/staff/${staffId}/status`, {
+      const response = await fetch(`/api/staff/${staffId}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -211,7 +211,7 @@ const StaffManagement: React.FC = () => {
 
   const handleAvailabilityChange = async (staffId: number, newAvailability: Staff['availability']) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/staff/${staffId}/availability`, {
+      const response = await fetch(`/api/staff/${staffId}/availability`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -292,8 +292,8 @@ const StaffManagement: React.FC = () => {
 
     try {
       const url = selectedStaff 
-        ? `http://localhost:5000/api/staff/${selectedStaff.id}`
-        : 'http://localhost:5000/api/staff';
+        ? `/api/staff/${selectedStaff.id}`
+        : '/api/staff';
       
       const method = selectedStaff ? 'PUT' : 'POST';
       
@@ -351,8 +351,29 @@ const StaffManagement: React.FC = () => {
   const handleTeamAssignment = async (teamId: string) => {
     if (!selectedStaff) return;
     
+    // Check team size limit when assigning to a team
+    if (teamId !== '') {
+      try {
+        // Fetch current team members count
+        const teamResponse = await fetch(`/api/teams/${teamId}`);
+        const teamData = await teamResponse.json();
+        
+        if (teamData.success && teamData.team) {
+          const currentMemberCount = teamData.team.member_count || 0;
+          if (currentMemberCount >= 5) {
+            showToast({ type: 'error', message: 'Team is at maximum capacity (5 members). Choose a different team.' });
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Error checking team capacity:', error);
+        showToast({ type: 'error', message: 'Error checking team capacity' });
+        return;
+      }
+    }
+    
     try {
-      const response = await fetch(`http://localhost:5000/api/staff/${selectedStaff.id}`, {
+      const response = await fetch(`/api/staff/${selectedStaff.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -943,10 +964,23 @@ const StaffManagement: React.FC = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">No Team</option>
-                  {teams.map(team => (
-                    <option key={team.id} value={team.id}>{team.name}</option>
-                  ))}
+                  {teams.map(team => {
+                    const memberCount = team.member_count || 0;
+                    const isFull = memberCount >= 5;
+                    return (
+                      <option 
+                        key={team.id} 
+                        value={team.id}
+                        disabled={isFull}
+                      >
+                        {team.name} ({memberCount}/5 members){isFull ? ' - FULL' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Teams with 5 members are at maximum capacity
+                </p>
               </div>
             </div>
             <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">

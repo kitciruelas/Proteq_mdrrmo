@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const path = require('path');
+const WebSocket = require('ws');
+const http = require('http');
 require('dotenv').config();
 
 // Set NODE_ENV to development if not set (for debugging)
@@ -17,7 +19,7 @@ app.use(cors({
   origin: ['http://localhost:5173', 'http://localhost:3000'], // Allow both Vite and React default ports
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cache-Control']
 }));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -53,6 +55,7 @@ const notificationsRoutes = require('./routes/notificationsRoutes');
 
 // Routing service proxy
 const routingRoutes = require('./routes/routingRoutes');
+const geocodingRoutes = require('./routes/geocodingRoutes');
 
 // Use routes
 app.use('/api/auth', authRoutes);
@@ -77,6 +80,7 @@ app.use('/api/welfare', welfareRoutes);
 app.use('/api/admin/welfare', adminWelfareRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/routing', routingRoutes);
+app.use('/api/geocoding', geocodingRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
@@ -113,10 +117,173 @@ app.use('*', (req, res) => {
     });
 });
 
+// Create HTTP server
+const server = http.createServer(app);
+
+// Create WebSocket server
+const wss = new WebSocket.Server({ server });
+
+// Store connected clients with their user info
+const connectedClients = new Map();
+
+// WebSocket connection handling
+wss.on('connection', (ws, req) => {
+    console.log('New WebSocket connection');
+
+    // Parse token from URL query parameters
+    const url = new URL(req.url, 'ws://localhost');
+    const token = url.searchParams.get('token');
+
+    if (!token) {
+        ws.close(1008, 'Token required');
+        return;
+    }
+
+    // Verify token and get user info
+    try {
+        const jwt = require('jsonwebtoken');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+        
+        // Store client info
+        const clientInfo = {
+            ws: ws,
+            userId: decoded.user_id || decoded.id,
+            userType: decoded.user_type || decoded.userType,
+            email: decoded.email,
+            name: decoded.name || decoded.first_name
+        };
+        
+        connectedClients.set(ws, clientInfo);
+        console.log(`WebSocket client connected: ${clientInfo.userType} - ${clientInfo.email}`);
+
+        // Send initial connection success message
+        ws.send(JSON.stringify({ 
+            type: 'connection', 
+            status: 'connected',
+            userType: clientInfo.userType,
+            timestamp: new Date().toISOString()
+        }));
+
+    } catch (error) {
+        console.error('Invalid token:', error.message);
+        ws.close(1008, 'Invalid token');
+        return;
+    }
+
+    // Handle incoming messages
+    ws.on('message', (message) => {
+        try {
+            const data = JSON.parse(message);
+            console.log('Received WebSocket message:', data);
+            
+            // Handle different message types
+            switch (data.type) {
+                case 'ping':
+                    ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
+                    break;
+                case 'subscribe':
+                    // Handle subscription to specific notification types
+                    console.log(`Client subscribed to: ${data.channels}`);
+                    break;
+                default:
+                    console.log('Unknown message type:', data.type);
+            }
+        } catch (error) {
+            console.error('Error processing WebSocket message:', error);
+            ws.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));
+        }
+    });
+
+    // Handle client disconnection
+    ws.on('close', () => {
+        const clientInfo = connectedClients.get(ws);
+        if (clientInfo) {
+            console.log(`WebSocket client disconnected: ${clientInfo.userType} - ${clientInfo.email}`);
+            connectedClients.delete(ws);
+        }
+    });
+
+    // Handle errors
+    ws.on('error', (error) => {
+        console.error('WebSocket error:', error);
+        connectedClients.delete(ws);
+    });
+});
+
+// Function to broadcast notifications to specific user types
+function broadcastToUserType(userType, message) {
+    let sentCount = 0;
+    connectedClients.forEach((clientInfo, ws) => {
+        if (clientInfo.userType === userType && ws.readyState === WebSocket.OPEN) {
+            try {
+                ws.send(JSON.stringify(message));
+                sentCount++;
+            } catch (error) {
+                console.error('Error sending WebSocket message:', error);
+                connectedClients.delete(ws);
+            }
+        }
+    });
+    console.log(`Broadcasted to ${sentCount} ${userType} clients`);
+}
+
+// Function to broadcast to all connected clients
+function broadcastToAll(message) {
+    let sentCount = 0;
+    connectedClients.forEach((clientInfo, ws) => {
+        if (ws.readyState === WebSocket.OPEN) {
+            try {
+                ws.send(JSON.stringify(message));
+                sentCount++;
+            } catch (error) {
+                console.error('Error sending WebSocket message:', error);
+                connectedClients.delete(ws);
+            }
+        }
+    });
+    console.log(`Broadcasted to ${sentCount} clients`);
+}
+
+// Function to broadcast incident notifications
+function broadcastIncidentNotification(incidentData, type = 'new_incident') {
+    const message = {
+        type: type,
+        data: incidentData,
+        timestamp: new Date().toISOString()
+    };
+    
+    // Broadcast to admin users
+    broadcastToUserType('admin', message);
+    
+    // Also broadcast to staff if it's a new incident
+    if (type === 'new_incident') {
+        broadcastToUserType('staff', message);
+    }
+}
+
+// Function to broadcast welfare notifications
+function broadcastWelfareNotification(welfareData, type = 'new_welfare_report') {
+    const message = {
+        type: type,
+        data: welfareData,
+        timestamp: new Date().toISOString()
+    };
+    
+    // Broadcast to admin users
+    broadcastToUserType('admin', message);
+}
+
+// Export functions for use in other modules
+global.broadcastIncidentNotification = broadcastIncidentNotification;
+global.broadcastWelfareNotification = broadcastWelfareNotification;
+global.broadcastToUserType = broadcastToUserType;
+global.broadcastToAll = broadcastToAll;
+
 // Start server
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`MDRRMO Backend server is running on port ${PORT}`);
     console.log(`Health check: http://localhost:${PORT}/api/health`);
+    console.log(`WebSocket server is running on ws://localhost:${PORT}`);
 });
 
 module.exports = app;

@@ -50,7 +50,23 @@ const StaffIncidentDetails: React.FC = () => {
 
         // Check if this incident is assigned to the current staff member
         const isAssignedToStaff = incidentData.assigned_staff_id === currentStaffId;
-        const isAssignedToTeam = incidentData.assigned_team_id === authState.userData?.assigned_team_id;
+        const currentTeamId = authState.userData?.assigned_team_id;
+        
+        // Check both single and multiple team assignments
+        let isAssignedToTeam = false;
+        if (currentTeamId) {
+          // Check single team assignment
+          if (incidentData.assigned_team_id === currentTeamId) {
+            isAssignedToTeam = true;
+          }
+          // Check multiple team assignments
+          if (incidentData.assigned_team_ids) {
+            const teamIds = incidentData.assigned_team_ids.split(',').map(id => Number(id.trim()));
+            if (teamIds.includes(currentTeamId)) {
+              isAssignedToTeam = true;
+            }
+          }
+        }
 
         if (!isAssignedToStaff && !isAssignedToTeam) {
           setError('You do not have permission to view this incident');

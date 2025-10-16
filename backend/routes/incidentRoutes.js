@@ -180,6 +180,34 @@ router.post('/report', authenticateUser, upload.array('attachments', 5), async (
       console.error('❌ Failed to log incident report activity:', logError.message);
     }
 
+    // Broadcast real-time notification to admin and staff
+    try {
+      if (global.broadcastIncidentNotification) {
+        const incidentData = {
+          id: result.insertId,
+          incident_id: result.insertId,
+          incident_type: incidentType,
+          description: fullDescription,
+          location: location,
+          latitude: finalLat,
+          longitude: finalLng,
+          priority_level: mappedPriority,
+          date_reported: dateTime.toISOString(),
+          status: 'pending',
+          reported_by: reportedBy,
+          reporter_safe_status: mappedSafety,
+          validation_status: 'unvalidated',
+          attachment: attachmentFilenames,
+          user_name: req.user?.name || req.user?.first_name || 'Registered User'
+        };
+        
+        global.broadcastIncidentNotification(incidentData, 'new_incident');
+        console.log('✅ Real-time notification broadcasted for new incident');
+      }
+    } catch (broadcastError) {
+      console.error('❌ Failed to broadcast incident notification:', broadcastError.message);
+    }
+
     res.status(201).json({
       success: true,
       message: 'Incident report submitted successfully',
@@ -370,6 +398,35 @@ router.post('/report-guest', upload.array('attachments', 5), async (req, res) =>
 
       // Use the incident ID as the response ID
       incidentId = result.insertId;
+
+      // Broadcast real-time notification to admin and staff
+      try {
+        if (global.broadcastIncidentNotification) {
+          const incidentData = {
+            id: result.insertId,
+            incident_id: result.insertId,
+            incident_type: incidentType,
+            description: fullDescription,
+            location: location,
+            latitude: finalLat,
+            longitude: finalLng,
+            priority_level: mappedPriority,
+            date_reported: new Date().toISOString(),
+            status: 'pending',
+            reported_by: null, // Guest user
+            reporter_safe_status: mappedSafety,
+            validation_status: 'unvalidated',
+            attachment: attachmentFilenames,
+            user_name: guestName.trim(),
+            guest_contact: guestContact.trim()
+          };
+          
+          global.broadcastIncidentNotification(incidentData, 'new_incident');
+          console.log('✅ Real-time notification broadcasted for new guest incident');
+        }
+      } catch (broadcastError) {
+        console.error('❌ Failed to broadcast guest incident notification:', broadcastError.message);
+      }
     } catch (error) {
       // Rollback on error
       await connection.rollback();
@@ -1963,7 +2020,7 @@ router.get('/staff/:staffId', async (req, res) => {
     console.log('👤 Staff member found:', staffMember.name);
     console.log('👥 Staff team ID:', teamId);
 
-    // Get incidents assigned to this staff member individually OR to their team
+    // Get incidents assigned to this staff member individually OR to their team (including multiple team assignments)
     const [incidents] = await pool.execute(`
       SELECT
         ir.*,
@@ -1979,17 +2036,36 @@ router.get('/staff/:staffId', async (req, res) => {
         END as reporter_type,
         CASE
           WHEN ir.assigned_staff_id = ? THEN 'individual'
+          WHEN EXISTS (
+            SELECT 1 FROM incident_team_assignments ita2 
+            WHERE ita2.incident_id = ir.incident_id 
+            AND ita2.team_id != ir.assigned_team_id
+            AND ita2.status = 'active'
+          ) THEN 'teams'
           WHEN ir.assigned_team_id = ? THEN 'team'
           ELSE 'unknown'
-        END as assignment_type
+        END as assignment_type,
+        GROUP_CONCAT(DISTINCT ita.team_id) as assigned_team_ids,
+        GROUP_CONCAT(DISTINCT t2.name SEPARATOR ', ') as all_assigned_teams
       FROM incident_reports ir
       LEFT JOIN teams t ON ir.assigned_team_id = t.id
       LEFT JOIN staff s ON ir.assigned_staff_id = s.id
       LEFT JOIN general_users gu ON ir.reported_by = gu.user_id
       LEFT JOIN incident_report_guests irg ON ir.incident_id = irg.incident_id
-      WHERE ir.assigned_staff_id = ? OR ir.assigned_team_id = ?
+      LEFT JOIN incident_team_assignments ita ON ir.incident_id = ita.incident_id AND ita.status = 'active'
+      LEFT JOIN teams t2 ON ita.team_id = t2.id
+      WHERE 
+        ir.assigned_staff_id = ? 
+        OR ir.assigned_team_id = ?
+        OR EXISTS (
+          SELECT 1 FROM incident_team_assignments ita3
+          WHERE ita3.incident_id = ir.incident_id
+          AND ita3.team_id = ?
+          AND ita3.status = 'active'
+        )
+      GROUP BY ir.incident_id
       ORDER BY ir.date_reported DESC
-    `, [staffId, teamId, staffId, teamId]);
+    `, [staffId, teamId, staffId, teamId, teamId]);
 
     console.log('📋 Found incidents for staff:', incidents.length);
     console.log('📊 Assignment breakdown:', {

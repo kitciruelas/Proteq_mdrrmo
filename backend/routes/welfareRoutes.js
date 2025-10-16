@@ -135,8 +135,36 @@ router.post('/submit', authenticateAny, async (req, res) => {
       console.error('❌ Failed to log welfare report submission activity:', logError.message);
     }
 
-    // No notification needed for individual welfare reports
-    // Only welfare system settings changes will trigger notifications
+    // Broadcast real-time notification to admin if user needs help
+    if (status === 'needs_help') {
+      try {
+        if (global.broadcastWelfareNotification) {
+          // Get user information for the notification
+          const [userInfo] = await db.execute(
+            'SELECT first_name, last_name, email FROM general_users WHERE user_id = ?',
+            [userId]
+          );
+          
+          const welfareData = {
+            report_id: result.insertId,
+            id: result.insertId,
+            user_id: userId,
+            status: status,
+            additional_info: additional_info,
+            submitted_at: new Date().toISOString(),
+            first_name: userInfo[0]?.first_name || '',
+            last_name: userInfo[0]?.last_name || '',
+            user_name: `${userInfo[0]?.first_name || ''} ${userInfo[0]?.last_name || ''}`.trim() || userInfo[0]?.email || 'Unknown User',
+            email: userInfo[0]?.email || ''
+          };
+          
+          global.broadcastWelfareNotification(welfareData, 'new_welfare_report');
+          console.log('✅ Real-time notification broadcasted for welfare report - needs help');
+        }
+      } catch (broadcastError) {
+        console.error('❌ Failed to broadcast welfare notification:', broadcastError.message);
+      }
+    }
 
     res.json({
       success: true,

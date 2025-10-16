@@ -458,7 +458,7 @@ const SafetyProtocolsPage: React.FC = () => {
                             // Image preview
                             <div className="relative aspect-video rounded-xl overflow-hidden border border-gray-200">
                               <img
-                                src={`http://localhost:5000/uploads/${protocol.file_attachment}`}
+                                src={`/uploads/${protocol.file_attachment}`}
                                 alt={protocol.title}
                                 className="w-full h-full object-cover"
                               />
@@ -475,7 +475,7 @@ const SafetyProtocolsPage: React.FC = () => {
                               {/* PDF Embed Preview */}
                               <div className="absolute inset-0 pt-12">
                                 <iframe
-                                  src={`http://localhost:5000/uploads/${protocol.file_attachment}#toolbar=0&view=FitH`}
+                                  src={`/uploads/${protocol.file_attachment}#toolbar=0&view=FitH`}
                                   className="w-full h-full"
                                   title={protocol.title}
                                 />
@@ -501,7 +501,7 @@ const SafetyProtocolsPage: React.FC = () => {
                           
                           {/* View button overlay */}
                           <a
-                            href={`http://localhost:5000/uploads/${protocol.file_attachment}`}
+                            href={`/uploads/${protocol.file_attachment}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="absolute inset-0 bg-black/50 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center rounded-xl group"
@@ -515,7 +515,7 @@ const SafetyProtocolsPage: React.FC = () => {
                       ) : (
                         // List view - keep original link style
                         <a
-                          href={`http://localhost:5000/uploads/${protocol.file_attachment}`}
+                          href={`/uploads/${protocol.file_attachment}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center text-green-600 hover:text-green-700 font-semibold transition-colors group"
@@ -621,7 +621,7 @@ const SafetyProtocolsPage: React.FC = () => {
                           <span className="font-medium text-gray-900">{selectedProtocol.file_attachment.split('/').pop()}</span>
                         </div>
                         <a
-                          href={`http://localhost:5000/uploads/${selectedProtocol.file_attachment}`}
+                          href={`/uploads/${selectedProtocol.file_attachment}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1"
@@ -632,7 +632,7 @@ const SafetyProtocolsPage: React.FC = () => {
                       </div>
                       <div className="h-[500px] bg-gray-50">
                         <iframe
-                          src={`http://localhost:5000/uploads/${selectedProtocol.file_attachment}#toolbar=0`}
+                          src={`/uploads/${selectedProtocol.file_attachment}#toolbar=0`}
                           className="w-full h-full"
                           title={selectedProtocol.title}
                         />
@@ -647,7 +647,7 @@ const SafetyProtocolsPage: React.FC = () => {
                           <span className="font-medium text-gray-900">{selectedProtocol.file_attachment.split('/').pop()}</span>
                         </div>
                         <a
-                          href={`http://localhost:5000/uploads/${selectedProtocol.file_attachment}`}
+                          href={`/uploads/${selectedProtocol.file_attachment}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1"
@@ -658,7 +658,7 @@ const SafetyProtocolsPage: React.FC = () => {
                       </div>
                       <div className="relative aspect-video">
                         <img
-                          src={`http://localhost:5000/uploads/${selectedProtocol.file_attachment}`}
+                          src={`/uploads/${selectedProtocol.file_attachment}`}
                           alt={selectedProtocol.title}
                           className="w-full h-full object-contain bg-gray-50"
                         />
@@ -673,7 +673,7 @@ const SafetyProtocolsPage: React.FC = () => {
                           <span className="font-medium text-gray-900">{selectedProtocol.file_attachment.split('/').pop()}</span>
                         </div>
                         <a
-                          href={`http://localhost:5000/uploads/${selectedProtocol.file_attachment}`}
+                          href={`/uploads/${selectedProtocol.file_attachment}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="bg-gray-100 text-gray-600 hover:bg-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1"

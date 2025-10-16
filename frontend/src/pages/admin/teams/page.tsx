@@ -42,6 +42,13 @@ const TeamsManagement: React.FC = () => {
   const [editingMemberCount, setEditingMemberCount] = useState<number | null>(null);
   const [editingMemberCountValue, setEditingMemberCountValue] = useState<string>('');
 
+  // Helper function to get team status
+  const getTeamStatus = (memberCount: number) => {
+    if (memberCount >= 5) return { status: 'full', color: 'red', text: 'Full' };
+    if (memberCount >= 3) return { status: 'optimal', color: 'green', text: 'Optimal' };
+    return { status: 'understaffed', color: 'yellow', text: 'Understaffed' };
+  };
+
   // Export configuration
   const exportColumns: ExportColumn[] = [
     { key: 'member_no', label: 'Member No' },
@@ -50,7 +57,7 @@ const TeamsManagement: React.FC = () => {
     {
       key: 'member_count',
       label: 'Members',
-      format: (value) => `${value || 0} members`
+      format: (value) => `${value || 0}/5 members`
     },
     {
       key: 'created_at',
@@ -121,7 +128,7 @@ const TeamsManagement: React.FC = () => {
       });
 
       console.log('Fetching teams with params:', params.toString());
-      const response = await fetch(`http://localhost:5000/api/teams?${params}`);
+      const response = await fetch(`/api/teams?${params}`);
       const data = await response.json();
       
       console.log('Teams API response:', data);
@@ -170,8 +177,8 @@ const TeamsManagement: React.FC = () => {
     
     try {
       const url = selectedTeam 
-        ? `http://localhost:5000/api/teams/${selectedTeam.id}`
-        : 'http://localhost:5000/api/teams';
+        ? `/api/teams/${selectedTeam.id}`
+        : '/api/teams';
       
       const method = selectedTeam ? 'PUT' : 'POST';
       
@@ -210,7 +217,7 @@ const TeamsManagement: React.FC = () => {
     
     // Fetch all staff members
     try {
-      const response = await fetch('http://localhost:5000/api/staff');
+      const response = await fetch('/api/staff');
       const data = await response.json();
       if (data.success) {
         setAllStaff(data.staff || []);
@@ -223,8 +230,17 @@ const TeamsManagement: React.FC = () => {
   const handleAssignStaffToTeam = async (staffId: number, assign: boolean) => {
     if (!selectedTeam) return;
     
+    // Check team size limit when adding members
+    if (assign) {
+      const currentTeamMembers = allStaff.filter(staff => staff.team_id === selectedTeam.id);
+      if (currentTeamMembers.length >= 5) {
+        showToast({ type: 'error', message: 'Team is at maximum capacity (5 members). Remove a member first.' });
+        return;
+      }
+    }
+    
     try {
-      const response = await fetch(`http://localhost:5000/api/staff/${staffId}`, {
+      const response = await fetch(`/api/staff/${staffId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -240,7 +256,7 @@ const TeamsManagement: React.FC = () => {
         // Refresh the teams list to update member counts
         fetchTeams();
         // Refresh the staff list
-        const staffResponse = await fetch('http://localhost:5000/api/staff');
+        const staffResponse = await fetch('/api/staff');
         const staffData = await staffResponse.json();
         if (staffData.success) {
           setAllStaff(staffData.staff || []);
@@ -264,7 +280,7 @@ const TeamsManagement: React.FC = () => {
   const confirmDeleteTeam = async () => {
     if (teamIdToDelete == null) return;
     try {
-      const response = await fetch(`http://localhost:5000/api/teams/${teamIdToDelete}`, {
+      const response = await fetch(`/api/teams/${teamIdToDelete}`, {
         method: 'DELETE',
       });
       const data = await response.json();
@@ -292,13 +308,13 @@ const TeamsManagement: React.FC = () => {
   const handleMemberCountSave = async (teamId: number) => {
     try {
       const newCount = parseInt(editingMemberCountValue);
-      if (isNaN(newCount) || newCount < 0) {
-        showToast({ type: 'warning', message: 'Please enter a valid number' });
+      if (isNaN(newCount) || newCount < 3 || newCount > 5) {
+        showToast({ type: 'warning', message: 'Team size must be between 3 and 5 members' });
         return;
       }
 
       // Update the team's member count in the database
-      const response = await fetch(`http://localhost:5000/api/teams/${teamId}/member-count`, {
+      const response = await fetch(`/api/teams/${teamId}/member-count`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -408,12 +424,18 @@ const TeamsManagement: React.FC = () => {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
           <div className="flex items-center">
             <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
-              <i className="ri-calendar-line text-purple-600"></i>
+              <i className="ri-team-line text-purple-600"></i>
             </div>
             <div>
-              <p className="text-sm text-gray-600">Active Teams</p>
+              <p className="text-sm text-gray-600">Optimal Teams</p>
               <p className="text-xl font-bold text-gray-900">
-                {teams.filter(team => (team.member_count || 0) > 0).length}
+                {teams.filter(team => {
+                  const count = team.member_count || 0;
+                  return count >= 3 && count <= 5;
+                }).length}
+              </p>
+              <p className="text-xs text-gray-500">
+                {teams.filter(team => (team.member_count || 0) < 3).length} understaffed, {teams.filter(team => (team.member_count || 0) >= 5).length} full
               </p>
             </div>
           </div>
@@ -496,6 +518,8 @@ const TeamsManagement: React.FC = () => {
                          <div className="flex items-center space-x-2">
                            <input
                              type="number"
+                             min="3"
+                             max="5"
                              value={editingMemberCountValue}
                              onChange={(e) => setEditingMemberCountValue(e.target.value)}
                              onBlur={() => handleMemberCountSave(team.id)}
@@ -532,10 +556,23 @@ const TeamsManagement: React.FC = () => {
                        ) : (
                          <div 
                            onClick={() => handleMemberCountClick(team)}
-                           className="cursor-pointer hover:bg-blue-50 px-2 py-1 rounded-md transition-colors"
-                           title="Click to edit member count"
+                           className={`cursor-pointer hover:bg-blue-50 px-2 py-1 rounded-md transition-colors ${
+                             (team.member_count || 0) >= 5 ? 'bg-red-50 text-red-700' : 
+                             (team.member_count || 0) >= 3 ? 'bg-green-50 text-green-700' : 
+                             'bg-yellow-50 text-yellow-700'
+                           }`}
+                           title={`Click to edit member count (3-5 members required)`}
                          >
-                           {team.member_count || 0} {(team.member_count || 0) === 1 ? 'member' : 'members'}
+                           <span className="font-medium">{team.member_count || 0}/5</span>
+                           <span className="ml-1 text-xs">
+                             {(team.member_count || 0) === 1 ? 'member' : 'members'}
+                           </span>
+                           {(team.member_count || 0) >= 5 && (
+                             <i className="ri-error-warning-line ml-1 text-xs" title="Team at maximum capacity"></i>
+                           )}
+                           {(team.member_count || 0) < 3 && (
+                             <i className="ri-alert-line ml-1 text-xs" title="Team below minimum size"></i>
+                           )}
                          </div>
                        )}
                      </div>
@@ -684,6 +721,27 @@ const TeamsManagement: React.FC = () => {
               <p className="text-sm text-gray-600 mt-1">
                 Assign or remove staff members from this team
               </p>
+              <div className="mt-2 flex items-center space-x-4">
+                <div className={`px-3 py-1 rounded-full text-xs font-medium ${
+                  (selectedTeam.member_count || 0) >= 5 ? 'bg-red-100 text-red-700' : 
+                  (selectedTeam.member_count || 0) >= 3 ? 'bg-green-100 text-green-700' : 
+                  'bg-yellow-100 text-yellow-700'
+                }`}>
+                  {selectedTeam.member_count || 0}/5 members
+                </div>
+                {(selectedTeam.member_count || 0) >= 5 && (
+                  <span className="text-xs text-red-600 flex items-center">
+                    <i className="ri-error-warning-line mr-1"></i>
+                    Team at maximum capacity
+                  </span>
+                )}
+                {(selectedTeam.member_count || 0) < 3 && (
+                  <span className="text-xs text-yellow-600 flex items-center">
+                    <i className="ri-alert-line mr-1"></i>
+                    Team below minimum size (3 members required)
+                  </span>
+                )}
+              </div>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -724,7 +782,13 @@ const TeamsManagement: React.FC = () => {
                         </div>
                         <button
                           onClick={() => handleAssignStaffToTeam(staff.id, true)}
-                          className="text-green-600 hover:text-green-800 text-sm"
+                          disabled={(selectedTeam.member_count || 0) >= 5}
+                          className={`text-sm ${
+                            (selectedTeam.member_count || 0) >= 5 
+                              ? 'text-gray-400 cursor-not-allowed' 
+                              : 'text-green-600 hover:text-green-800'
+                          }`}
+                          title={(selectedTeam.member_count || 0) >= 5 ? 'Team is at maximum capacity (5 members)' : 'Add to team'}
                         >
                           Add
                         </button>

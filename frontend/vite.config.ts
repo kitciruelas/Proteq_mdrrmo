@@ -79,7 +79,7 @@ export default defineConfig({
     port: 3000,
     host: '0.0.0.0',
     hmr: {
-      port: 3000, // Use same port for HMR WebSocket
+      port: 24678, // Use a different port for HMR WebSocket
       overlay: false, // Disable error overlay
     },
     proxy: {

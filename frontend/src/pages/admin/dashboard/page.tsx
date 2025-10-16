@@ -5,6 +5,9 @@ import BarChart from '../../../components/charts/BarChart';
 import PieChart from '../../../components/charts/PieChart';
 import StackedBarChart from '../../../components/charts/StackedBarChart';
 import LineChart from '../../../components/charts/LineChart';
+import { useToast } from '../../../components/base/Toast';
+import ExportUtils, { type ExportColumn } from '../../../utils/exportUtils';
+import ExportPreviewModal from '../../../components/base/ExportPreviewModal';
 
 interface DashboardStats {
   totalIncidents: number;
@@ -82,6 +85,13 @@ const AdminDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [trendsLoading, setTrendsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Export functionality
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportData, setExportData] = useState<any[]>([]);
+  const [exportColumns, setExportColumns] = useState<ExportColumn[]>([]);
+  const [exportTitle, setExportTitle] = useState('');
+  const { showToast } = useToast();
 
   useEffect(() => {
     const loadData = async () => {
@@ -233,6 +243,271 @@ const AdminDashboard: React.FC = () => {
     };
     
     return `${formatDate(startDate)} - ${formatDate(endDate)}`;
+  };
+
+  // Export functions
+  const exportDashboardStats = () => {
+    const statsData = [
+      { metric: 'Total Incidents', value: stats.totalIncidents },
+      { metric: 'Active Incidents', value: stats.activeIncidents },
+      { metric: 'Total Users', value: stats.totalUsers },
+      { metric: 'Staff Members', value: stats.totalStaff },
+      { metric: 'Total Alerts', value: stats.totalAlerts },
+      { metric: 'Active Alerts', value: stats.activeAlerts }
+    ];
+
+    const columns: ExportColumn[] = [
+      { key: 'metric', label: 'Metric' },
+      { key: 'value', label: 'Value' }
+    ];
+
+    setExportData(statsData);
+    setExportColumns(columns);
+    setExportTitle('Dashboard Statistics');
+    setShowExportModal(true);
+  };
+
+  const exportIncidentTypes = () => {
+    const columns: ExportColumn[] = [
+      { key: 'incident_type', label: 'Incident Type' },
+      { key: 'count', label: 'Count' }
+    ];
+
+    setExportData(incidentTypes);
+    setExportColumns(columns);
+    setExportTitle('Incident Types Distribution');
+    setShowExportModal(true);
+  };
+
+  const exportPriorityData = () => {
+    const columns: ExportColumn[] = [
+      { key: 'priority', label: 'Priority Level' },
+      { key: 'count', label: 'Count' }
+    ];
+
+    setExportData(priorityData);
+    setExportColumns(columns);
+    setExportTitle('Priority Level Distribution');
+    setShowExportModal(true);
+  };
+
+  const exportTrendsData = () => {
+    const columns: ExportColumn[] = [
+      { key: 'period', label: 'Period' },
+      { key: 'total_incidents', label: 'Total Incidents' },
+      { key: 'resolved_incidents', label: 'Resolved Incidents' },
+      { key: 'high_priority_incidents', label: 'High Priority Incidents' }
+    ];
+
+    setExportData(monthlyIncidents);
+    setExportColumns(columns);
+    setExportTitle(`Incident Trends (Last ${trendsLimit} ${trendsPeriod})`);
+    setShowExportModal(true);
+  };
+
+  const exportPeakHoursData = () => {
+    const formattedData = formatPeakHoursData(peakHoursData);
+    const columns: ExportColumn[] = [
+      { key: 'name', label: 'Hour' },
+      { key: 'count', label: 'Incident Count' },
+      { key: 'dateRange', label: 'Date Range' },
+      { key: 'sampleDateTime', label: 'Sample DateTime' }
+    ];
+
+    setExportData(formattedData);
+    setExportColumns(columns);
+    setExportTitle(`Peak Hours Analysis (${peakHoursDateRange})`);
+    setShowExportModal(true);
+  };
+
+  const exportLocationData = () => {
+    if (locationIncidents.length === 0) {
+      showToast({ message: 'No location data available to export', type: 'warning' });
+      return;
+    }
+
+    const columns: ExportColumn[] = [
+      { key: 'name', label: 'Barangay' },
+      ...Object.keys(locationIncidents[0] || {})
+        .filter(key => key !== 'name')
+        .map(key => ({ key, label: key.charAt(0).toUpperCase() + key.slice(1) }))
+    ];
+
+    setExportData(locationIncidents);
+    setExportColumns(columns);
+    setExportTitle('Barangay-based Risk Analysis');
+    setShowExportModal(true);
+  };
+
+  const exportSeasonalData = () => {
+    if (seasonalData.length === 0) {
+      showToast({ message: 'No seasonal data available to export', type: 'warning' });
+      return;
+    }
+
+    const columns: ExportColumn[] = [
+      { key: 'period', label: 'Period' },
+      { key: 'floods', label: 'Floods' },
+      { key: 'fires', label: 'Fires' },
+      { key: 'accidents', label: 'Accidents' },
+      { key: 'otherIncidents', label: 'Other Incidents' },
+      { key: 'allIncidents', label: 'All Incidents' },
+      { key: 'total', label: 'Total' }
+    ];
+
+    setExportData(seasonalData);
+    setExportColumns(columns);
+    setExportTitle('Seasonal Incident Patterns');
+    setShowExportModal(true);
+  };
+
+  const exportRecentActivity = () => {
+    if (recentActivity.length === 0) {
+      showToast({ message: 'No recent activity available to export', type: 'warning' });
+      return;
+    }
+
+    const columns: ExportColumn[] = [
+      { key: 'action', label: 'Action' },
+      { key: 'details', label: 'Details' },
+      { key: 'user_type', label: 'User Type' },
+      { key: 'created_at', label: 'Date' }
+    ];
+
+    setExportData(recentActivity);
+    setExportColumns(columns);
+    setExportTitle('Recent Activity');
+    setShowExportModal(true);
+  };
+
+  const exportAllData = () => {
+    // Combine all dashboard data into a comprehensive export
+    const allData = [];
+    
+    // Add dashboard statistics
+    allData.push({
+      section: 'Dashboard Statistics',
+      metric: 'Total Incidents',
+      value: stats.totalIncidents,
+      details: 'Overall incident count'
+    });
+    allData.push({
+      section: 'Dashboard Statistics',
+      metric: 'Active Incidents',
+      value: stats.activeIncidents,
+      details: 'Currently active incidents'
+    });
+    allData.push({
+      section: 'Dashboard Statistics',
+      metric: 'Total Users',
+      value: stats.totalUsers,
+      details: 'Registered users count'
+    });
+    allData.push({
+      section: 'Dashboard Statistics',
+      metric: 'Staff Members',
+      value: stats.totalStaff,
+      details: 'Staff members count'
+    });
+    allData.push({
+      section: 'Dashboard Statistics',
+      metric: 'Total Alerts',
+      value: stats.totalAlerts,
+      details: 'Total alerts count'
+    });
+    allData.push({
+      section: 'Dashboard Statistics',
+      metric: 'Active Alerts',
+      value: stats.activeAlerts,
+      details: 'Currently active alerts'
+    });
+
+    // Add incident types data
+    incidentTypes.forEach(item => {
+      allData.push({
+        section: 'Incident Types',
+        metric: item.incident_type,
+        value: item.count,
+        details: 'Incident type distribution'
+      });
+    });
+
+    // Add priority data
+    priorityData.forEach(item => {
+      allData.push({
+        section: 'Priority Distribution',
+        metric: item.priority,
+        value: item.count,
+        details: 'Priority level distribution'
+      });
+    });
+
+    // Add trends data
+    monthlyIncidents.forEach(item => {
+      allData.push({
+        section: 'Trends Data',
+        metric: item.period || item.month || 'Unknown Period',
+        value: item.total_incidents,
+        details: `Total incidents in ${item.period || item.month || 'Unknown Period'}`
+      });
+    });
+
+    // Add peak hours data
+    const formattedPeakHours = formatPeakHoursData(peakHoursData);
+    formattedPeakHours.forEach(item => {
+      allData.push({
+        section: 'Peak Hours Analysis',
+        metric: item.name,
+        value: item.count,
+        details: `Peak hour: ${item.dateRange || 'N/A'}`
+      });
+    });
+
+    // Add location data
+    locationIncidents.forEach(item => {
+      Object.keys(item).forEach(key => {
+        if (key !== 'name') {
+          allData.push({
+            section: 'Location Data',
+            metric: `${item.name} - ${key}`,
+            value: item[key],
+            details: 'Barangay-based incident data'
+          });
+        }
+      });
+    });
+
+    // Add seasonal data
+    seasonalData.forEach(item => {
+      allData.push({
+        section: 'Seasonal Patterns',
+        metric: item.period,
+        value: item.total,
+        details: `Total incidents in ${item.period}`
+      });
+    });
+
+    // Add recent activity
+    recentActivity.forEach(item => {
+      allData.push({
+        section: 'Recent Activity',
+        metric: item.action,
+        value: 1,
+        details: `${item.details} - ${item.user_type}`
+      });
+    });
+
+    const columns: ExportColumn[] = [
+      { key: 'section', label: 'Data Section' },
+      { key: 'metric', label: 'Metric/Type' },
+      { key: 'value', label: 'Value' },
+      { key: 'details', label: 'Details' }
+    ];
+
+    setExportData(allData);
+    setExportColumns(columns);
+    setExportTitle('Complete Dashboard Data Export');
+    setShowExportModal(true);
   };
 
   const fetchTrendsData = async (period: 'days' | 'weeks' | 'months' = 'months', limit: number = 12) => {
@@ -455,6 +730,81 @@ const AdminDashboard: React.FC = () => {
           <p className="text-gray-600 mt-1">Overview of emergency management system</p>
         </div>
         <div className="flex items-center space-x-3">
+          <div className="relative group">
+            <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center">
+              <i className="ri-download-line mr-2"></i>
+              Export Data
+              <i className="ri-arrow-down-s-line ml-1"></i>
+            </button>
+            <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+              <div className="py-2">
+                <button
+                  onClick={exportAllData}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center border-b border-gray-200 mb-1"
+                >
+                  <i className="ri-download-cloud-line mr-3 text-green-600"></i>
+                  <span className="font-semibold">Export All Data</span>
+                </button>
+                <div className="px-2 py-1 text-xs text-gray-500 mb-2">Individual Exports:</div>
+                <button
+                  onClick={exportDashboardStats}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                >
+                  <i className="ri-bar-chart-line mr-3 text-blue-500"></i>
+                  Dashboard Statistics
+                </button>
+                <button
+                  onClick={exportIncidentTypes}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                >
+                  <i className="ri-pie-chart-line mr-3 text-red-500"></i>
+                  Incident Types
+                </button>
+                <button
+                  onClick={exportPriorityData}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                >
+                  <i className="ri-pie-chart-2-line mr-3 text-orange-500"></i>
+                  Priority Distribution
+                </button>
+                <button
+                  onClick={exportTrendsData}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                >
+                  <i className="ri-line-chart-line mr-3 text-green-500"></i>
+                  Trends Data
+                </button>
+                <button
+                  onClick={exportPeakHoursData}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                >
+                  <i className="ri-time-line mr-3 text-yellow-500"></i>
+                  Peak Hours Analysis
+                </button>
+                <button
+                  onClick={exportLocationData}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                >
+                  <i className="ri-map-pin-line mr-3 text-purple-500"></i>
+                  Location Data
+                </button>
+                <button
+                  onClick={exportSeasonalData}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                >
+                  <i className="ri-calendar-line mr-3 text-indigo-500"></i>
+                  Seasonal Patterns
+                </button>
+                <button
+                  onClick={exportRecentActivity}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                >
+                  <i className="ri-history-line mr-3 text-gray-500"></i>
+                  Recent Activity
+                </button>
+              </div>
+            </div>
+          </div>
           <button
             onClick={fetchDashboardStats}
             disabled={loading}
@@ -777,6 +1127,53 @@ const AdminDashboard: React.FC = () => {
         
       </div>
 
+      {/* Export Preview Modal */}
+      <ExportPreviewModal
+        open={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        data={exportData}
+        columns={exportColumns}
+        title={exportTitle}
+        onExportCSV={() => {
+          try {
+            ExportUtils.exportToCSV(exportData, exportColumns, { 
+              filename: exportTitle.toLowerCase().replace(/\s+/g, '_'),
+              title: exportTitle 
+            });
+            showToast({ message: 'Data exported to CSV successfully!', type: 'success' });
+            setShowExportModal(false);
+          } catch (error) {
+            console.error('Export error:', error);
+            showToast({ message: 'Failed to export data. Please try again.', type: 'error' });
+          }
+        }}
+        onExportExcel={() => {
+          try {
+            ExportUtils.exportToExcel(exportData, exportColumns, { 
+              filename: exportTitle.toLowerCase().replace(/\s+/g, '_'),
+              title: exportTitle 
+            });
+            showToast({ message: 'Data exported to Excel successfully!', type: 'success' });
+            setShowExportModal(false);
+          } catch (error) {
+            console.error('Export error:', error);
+            showToast({ message: 'Failed to export data. Please try again.', type: 'error' });
+          }
+        }}
+        onExportPDF={async () => {
+          try {
+            await ExportUtils.exportToPDF(exportData, exportColumns, { 
+              filename: exportTitle.toLowerCase().replace(/\s+/g, '_'),
+              title: exportTitle 
+            });
+            showToast({ message: 'Data exported to PDF successfully!', type: 'success' });
+            setShowExportModal(false);
+          } catch (error) {
+            console.error('Export error:', error);
+            showToast({ message: 'Failed to export data. Please try again.', type: 'error' });
+          }
+        }}
+      />
       
     </div>
   );

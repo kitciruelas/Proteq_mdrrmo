@@ -30,11 +30,13 @@ interface Incident {
   attachment?: string | null
   assigned_team_id?: number | null
   assigned_team_name?: string
+  assigned_team_ids?: string // Comma-separated list of team IDs
+  all_assigned_teams?: string // Comma-separated list of team names
   assigned_staff_id?: number | null
   assigned_staff_name?: string
   date_reported: string
   date_resolved?: string
-  assignment_type?: "individual" | "team" | "unknown"
+  assignment_type?: "individual" | "team" | "teams" | "unknown"
   resolvedLocation?: string
 }
 
@@ -110,7 +112,7 @@ const StaffIncidentsPage: React.FC = () => {
   // Export columns configuration
   const exportColumns: ExportColumn[] = [
     { key: "incident_id", label: "Incident ID" },
-    { key: "incident_type", label: "Type" },
+    { key: "incident_type", label: "Type", format: (value) => getIncidentTypeText(value) },
     { key: "description", label: "Description" },
     { key: "resolvedLocation", label: "Location" },
     { key: "reporter_name", label: "Reporter" },
@@ -249,48 +251,41 @@ const StaffIncidentsPage: React.FC = () => {
     setGeocodingInProgress((prev) => ({ ...prev, [cacheKey]: true }))
 
     try {
-      // Use OpenStreetMap Nominatim API (free, no API key required)
+      // Use our backend proxy for geocoding
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`,
+        `/api/geocoding/reverse?lat=${lat}&lon=${lng}`,
+        {
+          headers: {
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        }
       )
 
-      if (response.ok) {
-        const data = await response.json()
-
-        // Extract location name from response
-        let locationName = ""
-
-        if (data.display_name) {
-          // Parse the display_name to get a more readable format
-          const parts = data.display_name.split(", ")
-          // Take the first 3 parts for a concise location name
-          locationName = parts.slice(0, 3).join(", ")
-        } else if (data.address) {
-          // Fallback to address components
-          const address = data.address
-          if (address.road && address.city) {
-            locationName = `${address.road}, ${address.city}`
-          } else if (address.city) {
-            locationName = address.city
-          } else if (address.town) {
-            locationName = address.town
-          } else if (address.village) {
-            locationName = address.village
-          } else {
-            locationName = "Unknown Location"
-          }
-        } else {
-          locationName = "Unknown Location"
-        }
-
-        // Cache the result
-        setLocationCache((prev) => ({
-          ...prev,
-          [cacheKey]: locationName,
-        }))
-
-        return locationName
+      if (!response.ok) {
+        console.error('Geocoding API error:', {
+          status: response.status,
+          statusText: response.statusText
+        });
+        throw new Error(`Geocoding failed: ${response.status} ${response.statusText}`);
       }
+
+      const data = await response.json();
+      
+      if (!data.success) {
+        console.error('Geocoding API error:', data.message);
+        throw new Error(data.message || 'Geocoding failed');
+      }
+
+      const locationName = data.data || "Unknown Location";
+
+      // Cache the result
+      setLocationCache((prev) => ({
+        ...prev,
+        [cacheKey]: locationName,
+      }));
+
+      return locationName;
     } catch (error) {
       console.error("Error geocoding coordinates:", error)
     } finally {
@@ -318,6 +313,7 @@ const StaffIncidentsPage: React.FC = () => {
     if (searchTerm) {
       filtered = filtered.filter(
         (incident) =>
+          getIncidentTypeText(incident.incident_type).includes(searchTerm.toUpperCase()) ||
           incident.incident_type.toLowerCase().includes(searchTerm.toLowerCase()) ||
           incident.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
           incident.location.toLowerCase().includes(searchTerm.toLowerCase()),
@@ -339,8 +335,39 @@ const StaffIncidentsPage: React.FC = () => {
       if (assignmentFilter === "individual") {
         filtered = filtered.filter((incident) => incident.assigned_staff_id === currentStaffId)
       } else if (assignmentFilter === "team") {
-        filtered = filtered.filter((incident) => incident.assigned_team_id === currentStaffTeamId)
+        filtered = filtered.filter((incident) => {
+          // Check single team assignment
+          if (incident.assigned_team_id === currentStaffTeamId) {
+            return true;
+          }
+          // Check multiple team assignments
+          if (incident.assigned_team_ids && currentStaffTeamId) {
+            const teamIds = incident.assigned_team_ids.split(',').map(id => Number(id.trim()));
+            return teamIds.includes(currentStaffTeamId);
+          }
+          return false;
+        });
       }
+    }
+    
+    // If no assignment filter, still show incidents assigned to staff's team
+    if (assignmentFilter === "all" && currentStaffTeamId) {
+      filtered = filtered.filter((incident) => {
+        // Check single team assignment
+        if (incident.assigned_team_id === currentStaffTeamId) {
+          return true;
+        }
+        // Check multiple team assignments
+        if (incident.assigned_team_ids) {
+          const teamIds = incident.assigned_team_ids.split(',').map(id => Number(id.trim()));
+          return teamIds.includes(currentStaffTeamId);
+        }
+        // Check individual assignment
+        if (incident.assigned_staff_id === currentStaffId) {
+          return true;
+        }
+        return false;
+      });
     }
 
     setFilteredIncidents(filtered)
@@ -563,6 +590,10 @@ const StaffIncidentsPage: React.FC = () => {
     return status.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase())
   }
 
+  const getIncidentTypeText = (incidentType: string) => {
+    return incidentType.toUpperCase()
+  }
+
   const getAssignmentType = (incident: Incident) => {
     // Use the assignment_type from backend if available, otherwise fallback to logic
     if (incident.assignment_type) {
@@ -571,6 +602,12 @@ const StaffIncidentsPage: React.FC = () => {
 
     if (incident.assigned_staff_id === currentStaffId) {
       return "individual"
+    } else if (incident.assigned_team_ids) {
+      // Check if current team is in the list of assigned teams
+      const teamIds = incident.assigned_team_ids.split(',').map(id => Number(id.trim()))
+      if (currentStaffTeamId && teamIds.includes(currentStaffTeamId)) {
+        return "teams"
+      }
     } else if (incident.assigned_team_id === currentStaffTeamId) {
       return "team"
     }
@@ -583,6 +620,12 @@ const StaffIncidentsPage: React.FC = () => {
       return (
         <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 border border-blue-200">
           Individual
+        </span>
+      )
+    } else if (assignmentType === "teams") {
+      return (
+        <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
+          Multiple Teams
         </span>
       )
     } else if (assignmentType === "team") {
@@ -890,7 +933,7 @@ const StaffIncidentsPage: React.FC = () => {
                       {/* Incident Type and Description */}
                       <div>
                         <h4 className="text-sm sm:text-base font-semibold text-gray-900 mb-2">
-                          {incident.incident_type}
+                          {getIncidentTypeText(incident.incident_type)}
                         </h4>
                         <p className="text-xs sm:text-sm text-gray-600 line-clamp-2 leading-relaxed">
                           {incident.description}
@@ -931,11 +974,22 @@ const StaffIncidentsPage: React.FC = () => {
                           </div>
                           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                             {getAssignmentBadge(incident)}
-                            {incident.assigned_team_name && (
+                            {incident.all_assigned_teams ? (
+                              <div className="flex flex-col space-y-1">
+                                <span className="text-xs sm:text-sm text-gray-700 font-medium break-words">
+                                  {incident.all_assigned_teams}
+                                </span>
+                                {incident.assigned_team_ids && (
+                                  <span className="text-xs text-gray-500">
+                                    {incident.assigned_team_ids.split(',').length} teams assigned
+                                  </span>
+                                )}
+                              </div>
+                            ) : incident.assigned_team_name ? (
                               <span className="text-xs sm:text-sm text-gray-700 font-medium break-words">
                                 {incident.assigned_team_name}
                               </span>
-                            )}
+                            ) : null}
                             {incident.assigned_staff_name && (
                               <span className="text-xs sm:text-sm text-gray-700 font-medium break-words">
                                 {incident.assigned_staff_name}
@@ -1026,7 +1080,7 @@ const StaffIncidentsPage: React.FC = () => {
                   </div>
                   <div>
                     <h2 className="text-lg sm:text-xl font-bold">Incident #{selectedIncident.incident_id}</h2>
-                    <p className="text-blue-100 text-xs sm:text-sm">{selectedIncident.incident_type}</p>
+                    <p className="text-blue-100 text-xs sm:text-sm">{getIncidentTypeText(selectedIncident.incident_type)}</p>
                   </div>
                 </div>
                 <button

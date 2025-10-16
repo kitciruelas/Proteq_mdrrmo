@@ -478,7 +478,7 @@ export default function IncidentReportPage() {
       }
 
       // Real API call to save to database
-      const response = await fetch(`http://localhost:5000${endpoint}`, {
+      const response = await fetch(`${endpoint}`, {
         method: 'POST',
         ...(isAuthenticated && userData?.token ? { headers: { 'Authorization': `Bearer ${userData.token}` } } : {}),
         body: formData

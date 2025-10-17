@@ -16,10 +16,34 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000'], // Allow both Vite and React default ports
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:5173', 
+      'http://localhost:3000', 
+      'https://soteros-client.vercel.app',
+      'https://soteros-client-git-main.vercel.app',
+      'https://soteros-client-git-develop.vercel.app'
+    ];
+    
+    // Allow any Vercel preview URL
+    if (origin.includes('.vercel.app')) {
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cache-Control']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cache-Control', 'X-Requested-With'],
+  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
 }));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -87,7 +111,20 @@ app.get('/api/health', (req, res) => {
     res.json({
         success: true,
         message: 'MDRRMO Backend API is running',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development',
+        cors: 'enabled'
+    });
+});
+
+// Simple test endpoint for frontend connection
+app.get('/api/test', (req, res) => {
+    res.json({
+        success: true,
+        message: 'Frontend connection test successful',
+        timestamp: new Date().toISOString(),
+        origin: req.headers.origin || 'unknown',
+        userAgent: req.headers['user-agent'] || 'unknown'
     });
 });
 
